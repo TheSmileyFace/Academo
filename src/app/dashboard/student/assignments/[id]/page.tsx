@@ -3,10 +3,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { BookOpen, ArrowLeft, Clock, User, Upload, FileText, Send, Loader2, CheckCircle2, Paperclip, X } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
@@ -151,7 +149,7 @@ export default function AssignmentDetailPage() {
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-[#1e3a5f]" />
+        <Loader2 className="h-6 w-6 animate-spin text-[#2D2D2D]" />
       </div>
     );
   }
@@ -159,8 +157,8 @@ export default function AssignmentDetailPage() {
   if (!assignment) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
-        <p className="text-gray-400">Assignment not found</p>
-        <Link href="/dashboard/student" className="mt-3 text-sm text-[#1e3a5f] hover:text-[#1e3a5f]">
+        <p className="text-[14px] text-[#9A9A9A]">Assignment not found</p>
+        <Link href="/dashboard/student" className="mt-3 text-[13px] font-semibold text-black hover:opacity-70">
           Back to dashboard
         </Link>
       </div>
@@ -168,131 +166,127 @@ export default function AssignmentDetailPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-4 pt-2">
       <Link
-        href="/dashboard/student"
-        className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+        href="/dashboard/student/assignments"
+        className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#9A9A9A] hover:text-black transition-colors"
       >
-        <ArrowLeft className="h-4 w-4" /> Back to Dashboard
+        <ArrowLeft className="h-3.5 w-3.5" /> Back to Tasks
       </Link>
 
-      {/* Header */}
-      <div>
-        <div className="flex items-start gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 shrink-0">
-            <BookOpen className="h-6 w-6 text-[#1e3a5f]" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-gray-900">{assignment.title}</h1>
-            <div className="flex flex-wrap items-center gap-2 mt-1.5">
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-100 rounded-full px-2.5 py-1">
-                <BookOpen className="h-3 w-3" /> {assignment.subject}
+      {/* Header Card */}
+      <div className="dash-card rounded-2xl">
+        <div className="px-4 pt-4 pb-3">
+          <h1 className="text-[20px] font-bold text-black">{assignment.title}</h1>
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#9A9A9A] bg-[#2D2D2D]/5 rounded-lg px-2.5 py-1">
+              <BookOpen className="h-3 w-3" /> {assignment.subject}
+            </span>
+            {assignment.class_name && (
+              <span className="text-[10px] font-bold text-[#9A9A9A] bg-[#2D2D2D]/5 rounded-lg px-2.5 py-1">
+                {assignment.class_name}
               </span>
-              {assignment.class_name && (
-                <span className="text-xs font-medium text-gray-500 bg-gray-100 rounded-full px-2.5 py-1">
-                  {assignment.class_name}
-                </span>
-              )}
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-100 rounded-full px-2.5 py-1">
-                <User className="h-3 w-3" /> {teacherName}
+            )}
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#9A9A9A] bg-[#2D2D2D]/5 rounded-lg px-2.5 py-1">
+              <User className="h-3 w-3" /> {teacherName}
+            </span>
+            <span className={`inline-flex items-center gap-1 text-[10px] font-bold rounded-lg px-2.5 py-1 ${
+              isOverdue
+                ? "bg-red-100 text-red-700"
+                : "bg-[#2D2D2D] text-white"
+            }`}>
+              <Clock className="h-3 w-3" />
+              {isOverdue ? "Overdue" : "Due"} {new Date(assignment.due_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+            </span>
+            {isSubmitted && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold rounded-lg px-2.5 py-1 bg-green-100 text-green-700">
+                <CheckCircle2 className="h-3 w-3" /> Submitted
               </span>
-              <span className={`inline-flex items-center gap-1 text-xs font-semibold rounded-full px-2.5 py-1 ${
-                isOverdue
-                  ? "bg-red-100 text-red-700"
-                  : "bg-blue-50 text-[#1e3a5f]"
-              }`}>
-                <Clock className="h-3 w-3" />
-                {isOverdue ? "Overdue" : "Due"} {new Date(assignment.due_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-              </span>
-              {isSubmitted && (
-                <span className="inline-flex items-center gap-1 text-xs font-semibold rounded-full px-2.5 py-1 bg-blue-100 text-[#1e3a5f]">
-                  <CheckCircle2 className="h-3 w-3" /> Submitted
-                </span>
-              )}
-            </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Description */}
-      <Card className="border-0 shadow-sm">
-        <CardContent className="pt-6">
-          <h2 className="text-sm font-bold text-gray-700 mb-3">Instructions</h2>
-          <div className="prose prose-sm max-w-none text-gray-600 whitespace-pre-wrap">
+      <div className="dash-card rounded-2xl">
+        <div className="px-4 pt-3 pb-2">
+          <span className="text-[14px] font-semibold text-black">Instructions</span>
+        </div>
+        <div className="h-px bg-black/10" />
+        <div className="px-4 py-3">
+          <div className="text-[13px] text-[#9A9A9A] leading-relaxed whitespace-pre-wrap">
             {assignment.description}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Submission Area */}
-      <Card className="border-0 shadow-sm">
-        <CardContent className="pt-6 space-y-4">
-          <h2 className="text-sm font-bold text-gray-700 flex items-center gap-2">
-            <Send className="h-4 w-4 text-[#1e3a5f]" />
-            Your Submission
-          </h2>
-
+      <div className="dash-card rounded-2xl">
+        <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+          <Send className="h-4 w-4 text-[#2D2D2D]" />
+          <span className="text-[14px] font-semibold text-black">Your Submission</span>
+        </div>
+        <div className="h-px bg-black/10" />
+        <div className="px-4 py-3 space-y-4">
           {isSubmitted && (
-            <div className="rounded-xl bg-blue-50 border border-blue-200 p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <CheckCircle2 className="h-4 w-4 text-[#1e3a5f]" />
-                <p className="text-sm font-semibold text-[#1e3a5f]">
+            <div className="rounded-xl bg-[#2D2D2D]/5 p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <CheckCircle2 className="h-3.5 w-3.5 text-[#2D2D2D]" />
+                <p className="text-[13px] font-semibold text-black">
                   Submitted on {new Date(submission!.submitted_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                 </p>
               </div>
               {submission!.file_name && (
-                <p className="text-xs text-[#1e3a5f] flex items-center gap-1">
+                <p className="text-[10px] text-[#9A9A9A] flex items-center gap-1">
                   <Paperclip className="h-3 w-3" /> {submission!.file_name}
                 </p>
               )}
-              <p className="text-xs text-[#1e3a5f] mt-1">You can resubmit to update your answer.</p>
+              <p className="text-[10px] text-[#9A9A9A] mt-1">You can resubmit to update your answer.</p>
             </div>
           )}
 
           <div>
-            <Label className="text-sm font-medium text-gray-600">Written Answer</Label>
+            <p className="text-[13px] font-semibold text-black mb-1.5">Written Answer</p>
             <Textarea
               placeholder="Type your answer here..."
               value={answerText}
               onChange={(e) => setAnswerText(e.target.value)}
               rows={6}
-              className="mt-1.5 rounded-xl border-gray-200"
+              className="rounded-xl border-black/10 text-[13px]"
             />
           </div>
 
           <div>
-            <Label className="text-sm font-medium text-gray-600">Upload File</Label>
-            <div className="mt-1.5">
-              {selectedFile ? (
-                <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
-                  <FileText className="h-5 w-5 text-[#1e3a5f] shrink-0" />
-                  <span className="text-sm text-[#1e3a5f] truncate flex-1">{selectedFile.name}</span>
-                  <button onClick={() => setSelectedFile(null)} className="text-gray-400 hover:text-gray-600">
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              ) : (
-                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-200 py-8 transition-colors hover:border-blue-300 hover:bg-blue-50/30">
-                  <Upload className="h-5 w-5 text-gray-400" />
-                  <span className="text-sm text-gray-400">Click to upload a file</span>
-                  <input
-                    type="file"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) setSelectedFile(file);
-                    }}
-                  />
-                </label>
-              )}
-            </div>
+            <p className="text-[13px] font-semibold text-black mb-1.5">Upload File</p>
+            {selectedFile ? (
+              <div className="flex items-center gap-3 rounded-xl border border-black/10 bg-[#2D2D2D]/5 p-3">
+                <FileText className="h-5 w-5 text-[#2D2D2D] shrink-0" />
+                <span className="text-[13px] text-black truncate flex-1">{selectedFile.name}</span>
+                <button onClick={() => setSelectedFile(null)} className="text-[#9A9A9A] hover:text-black">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-black/10 py-8 transition-colors hover:border-[#2D2D2D]/30 hover:bg-[#2D2D2D]/5">
+                <Upload className="h-5 w-5 text-[#9A9A9A]" />
+                <span className="text-[13px] text-[#9A9A9A]">Click to upload a file</span>
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) setSelectedFile(file);
+                  }}
+                />
+              </label>
+            )}
           </div>
 
-          <div className="flex justify-end pt-2">
+          <div className="flex justify-end pt-1">
             <Button
               onClick={handleSubmit}
               disabled={submitting}
-              className="bg-[#1e3a5f] hover:bg-[#162d4a] rounded-xl h-11 px-6"
+              className="bg-[#2D2D2D] hover:bg-[#1a1a1a] text-white rounded-xl h-10 px-6 text-[13px] font-semibold"
             >
               {submitting ? (
                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
@@ -303,8 +297,8 @@ export default function AssignmentDetailPage() {
               )}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

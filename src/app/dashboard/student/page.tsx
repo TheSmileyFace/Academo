@@ -1,16 +1,39 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { Clock, MessageCircle, Megaphone, Calendar } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import Link from "next/link";
-import { AssignmentsCard, ExamsCard, CalendarCard } from "./student-dashboard-client";
+import {
+  AssignmentsCard,
+  ExamsCard,
+  ScheduleCard,
+  PlannerCard,
+  AnnouncementsCard,
+} from "./student-dashboard-client";
 
 export default async function StudentDashboard() {
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Fetch assignments assigned to this student (not completed)
+  // Fetch student profile
+  const { data: studentProfile } = await supabase
+    .from("profiles")
+    .select("school_id, full_name")
+    .eq("id", user.id)
+    .single();
+
+  const schoolId = studentProfile?.school_id;
+
+  // Fetch school name
+  let schoolName = "";
+  if (schoolId) {
+    const { data: school } = await supabase
+      .from("schools")
+      .select("name")
+      .eq("id", schoolId)
+      .single();
+    schoolName = school?.name || "";
+  }
+
+  // Fetch assignments assigned to this student
   const { data: assignmentLinks } = await supabase
     .from("assignment_students")
     .select("assignment_id, completed_at")
@@ -18,6 +41,10 @@ export default async function StudentDashboard() {
 
   const pendingAssignmentIds = (assignmentLinks || [])
     .filter((l) => !l.completed_at)
+    .map((l) => l.assignment_id);
+
+  const completedAssignmentIds = (assignmentLinks || [])
+    .filter((l) => l.completed_at)
     .map((l) => l.assignment_id);
 
   let myAssignments: { id: string; title: string; subject: string; class_name: string; due_date: string; status: string; created_by: string }[] = [];
@@ -29,6 +56,48 @@ export default async function StudentDashboard() {
       .eq("status", "active")
       .order("due_date", { ascending: true });
     myAssignments = data || [];
+  }
+
+  // Fetch completed assignments (for filler slots)
+  let completedAssignments: { id: string; title: string; subject: string; due_date: string; created_by: string }[] = [];
+  if (completedAssignmentIds.length > 0) {
+    const { data } = await supabase
+      .from("assignments")
+      .select("id, title, subject, due_date, created_by")
+      .in("id", completedAssignmentIds)
+      .order("due_date", { ascending: false })
+      .limit(4);
+    completedAssignments = data || [];
+  }
+
+  // Fetch graded submissions for Grades tab
+  const { data: gradedSubmissions } = await supabase
+    .from("submissions")
+    .select("id, grade, feedback, assignment_id")
+    .eq("student_id", user.id)
+    .eq("status", "graded")
+    .order("submitted_at", { ascending: false })
+    .limit(4);
+
+  let gradedItems: { id: string; assignment_title: string; subject: string; grade: number; feedback: string | null; created_by: string }[] = [];
+  if (gradedSubmissions && gradedSubmissions.length > 0) {
+    const gradeAssignmentIds = [...new Set(gradedSubmissions.map((s) => s.assignment_id))];
+    const { data: gradeAssignments } = await supabase
+      .from("assignments")
+      .select("id, title, subject, created_by")
+      .in("id", gradeAssignmentIds);
+    const gaMap: Record<string, { title: string; subject: string; created_by: string }> = {};
+    (gradeAssignments || []).forEach((a) => { gaMap[a.id] = { title: a.title, subject: a.subject, created_by: a.created_by }; });
+    gradedItems = gradedSubmissions
+      .filter((s) => s.grade != null && gaMap[s.assignment_id])
+      .map((s) => ({
+        id: s.id,
+        assignment_title: gaMap[s.assignment_id].title,
+        subject: gaMap[s.assignment_id].subject,
+        grade: s.grade!,
+        feedback: s.feedback,
+        created_by: gaMap[s.assignment_id].created_by,
+      }));
   }
 
   // Fetch exams assigned to this student
@@ -49,36 +118,48 @@ export default async function StudentDashboard() {
     myExams = data || [];
   }
 
-  // Get teacher names
-  const allTeacherIds = [...new Set([...myAssignments.map((a) => a.created_by), ...myExams.map((e) => e.created_by)].filter(Boolean))];
+  // Get all teacher IDs needed
+  const allTeacherIds = [...new Set([
+    ...myAssignments.map((a) => a.created_by),
+    ...completedAssignments.map((a) => a.created_by),
+    ...gradedItems.map((g) => g.created_by),
+    ...myExams.map((e) => e.created_by),
+  ].filter(Boolean))];
+
   let teacherMap: Record<string, string> = {};
   if (allTeacherIds.length > 0) {
     const { data: teachers } = await supabase.from("profiles").select("id, full_name").in("id", allTeacherIds);
     (teachers || []).forEach((t) => { teacherMap[t.id] = t.full_name || "Teacher"; });
   }
 
-  // Fetch school_id from profile
-  const { data: studentProfile } = await supabase
-    .from("profiles")
-    .select("school_id")
-    .eq("id", user.id)
-    .single();
-
   // Fetch announcements
-  let announcements: { id: string; title: string; content: string; priority: string; created_at: string }[] = [];
-  if (studentProfile?.school_id) {
+  let announcements: { id: string; title: string; content: string; priority: string; created_at: string; created_by: string }[] = [];
+  if (schoolId) {
     const { data } = await supabase
       .from("announcements")
-      .select("id, title, content, priority, created_at")
-      .eq("school_id", studentProfile.school_id)
+      .select("id, title, content, priority, created_at, created_by")
+      .eq("school_id", schoolId)
       .order("created_at", { ascending: false })
       .limit(3);
     announcements = data || [];
   }
 
-  // Fetch timetable slots for today
-  let todaySlots: { id: string; start_time: string; end_time: string; room: string | null; subject_name?: string }[] = [];
-  if (studentProfile?.school_id) {
+  // Get announcement author names
+  const announcementAuthorIds = [...new Set(announcements.map((a) => a.created_by).filter(Boolean))];
+  let authorMap: Record<string, string> = {};
+  if (announcementAuthorIds.length > 0) {
+    const { data: authors } = await supabase.from("profiles").select("id, full_name").in("id", announcementAuthorIds);
+    (authors || []).forEach((a) => { authorMap[a.id] = a.full_name || "Admin"; });
+  }
+
+  const announcementsWithAuthors = announcements.map((a) => ({
+    ...a,
+    author_name: authorMap[a.created_by] || undefined,
+  }));
+
+  // Fetch timetable slots for all days (for schedule navigation)
+  let slotsMap: Record<number, { id: string; start_time: string; end_time: string; room: string | null; subject_name?: string; teacher_name?: string }[]> = {};
+  if (schoolId) {
     const { data: enrollment } = await supabase
       .from("student_enrollments")
       .select("class_id")
@@ -86,169 +167,167 @@ export default async function StudentDashboard() {
       .single();
 
     if (enrollment?.class_id) {
-      const todayDow = new Date().getDay();
       const { data: slots } = await supabase
         .from("timetable_slots")
-        .select("id, start_time, end_time, room, class_subject_id")
-        .eq("school_id", studentProfile.school_id)
-        .eq("day_of_week", todayDow)
+        .select("id, start_time, end_time, room, class_subject_id, day_of_week")
+        .eq("school_id", schoolId)
         .order("start_time", { ascending: true });
 
       if (slots && slots.length > 0) {
-        // Get class_subjects for this student's class
-        const csIds = slots.map(s => s.class_subject_id);
+        const csIds = [...new Set(slots.map(s => s.class_subject_id))];
         const { data: classSubjects } = await supabase
           .from("class_subjects")
-          .select("id, subject_id, class_id")
+          .select("id, subject_id, class_id, teacher_id")
           .in("id", csIds)
           .eq("class_id", enrollment.class_id);
 
         const validCsIds = new Set((classSubjects || []).map(cs => cs.id));
 
         // Get subject names
-        const subjectIds = (classSubjects || []).map(cs => cs.subject_id);
+        const subjectIds = [...new Set((classSubjects || []).map(cs => cs.subject_id))];
         let subjectMap: Record<string, string> = {};
         if (subjectIds.length > 0) {
           const { data: subjects } = await supabase.from("subjects").select("id, name").in("id", subjectIds);
           (subjects || []).forEach(s => { subjectMap[s.id] = s.name; });
         }
 
-        const csSubjectMap: Record<string, string> = {};
-        (classSubjects || []).forEach(cs => { csSubjectMap[cs.id] = subjectMap[cs.subject_id] || "Subject"; });
+        // Get teacher names for timetable
+        const ttTeacherIds = [...new Set((classSubjects || []).map(cs => cs.teacher_id).filter(Boolean))];
+        let ttTeacherMap: Record<string, string> = {};
+        if (ttTeacherIds.length > 0) {
+          const { data: ttTeachers } = await supabase.from("profiles").select("id, full_name").in("id", ttTeacherIds);
+          (ttTeachers || []).forEach(t => { ttTeacherMap[t.id] = t.full_name || "Teacher"; });
+        }
 
-        todaySlots = slots
+        const csMap: Record<string, { subject: string; teacher: string }> = {};
+        (classSubjects || []).forEach(cs => {
+          csMap[cs.id] = {
+            subject: subjectMap[cs.subject_id] || "Subject",
+            teacher: ttTeacherMap[cs.teacher_id] || "",
+          };
+        });
+
+        slots
           .filter(s => validCsIds.has(s.class_subject_id))
-          .map(s => ({ ...s, subject_name: csSubjectMap[s.class_subject_id] }));
+          .forEach(s => {
+            const dow = s.day_of_week;
+            if (!slotsMap[dow]) slotsMap[dow] = [];
+            slotsMap[dow].push({
+              id: s.id,
+              start_time: s.start_time,
+              end_time: s.end_time,
+              room: s.room,
+              subject_name: csMap[s.class_subject_id]?.subject,
+              teacher_name: csMap[s.class_subject_id]?.teacher,
+            });
+          });
       }
     }
   }
 
-  const userName = user.user_metadata?.full_name?.split(" ")[0] || "there";
+  // Build planner tasks from pending assignments
+  const plannerTasks = myAssignments.map((a) => ({
+    id: a.id,
+    title: a.title,
+    subject: a.subject,
+    teacher_name: teacherMap[a.created_by] || "Teacher",
+    due_date: a.due_date,
+  }));
+
+  // Vacation countdown — use events table if available
+  let vacationDays: number | null = null;
+  if (schoolId) {
+    const { data: events } = await supabase
+      .from("events")
+      .select("start_date")
+      .eq("school_id", schoolId)
+      .eq("event_type", "holiday")
+      .gte("start_date", new Date().toISOString().split("T")[0])
+      .order("start_date", { ascending: true })
+      .limit(1);
+    if (events && events.length > 0) {
+      const nextVac = new Date(events[0].start_date);
+      const now = new Date();
+      vacationDays = Math.ceil((nextVac.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    }
+  }
+
+  const userName = studentProfile?.full_name?.split(" ")[0] || user.user_metadata?.full_name?.split(" ")[0] || "there";
 
   const today = new Date();
   const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col gap-3">
-      {/* Greeting */}
-      <div className="shrink-0">
-        <p className="text-xs text-gray-400">{dayNames[today.getDay()]}, {monthNames[today.getMonth()]} {today.getDate()}</p>
-        <h1 className="text-2xl font-bold text-gray-900">Welcome back, {userName}</h1>
+    <div className="h-full flex flex-col gap-3">
+      {/* ─── TOP BAR ─── */}
+      <div className="flex items-start justify-between shrink-0" style={{ paddingTop: 23 }}>
+        <div>
+          <p className="text-[12px] text-[#9A9A9A]">
+            {dayNames[today.getDay()]}, {today.getDate()} {monthNames[today.getMonth()]}
+          </p>
+          <h1 className="text-[22px] leading-tight mt-0.5" style={{ marginTop: 0 }}>
+            <span className="mr-1">👋</span>
+            <span className="font-libre">Welcome back, </span>
+            <span className="font-semibold">{userName}</span>
+          </h1>
+        </div>
+        {schoolName && (
+          <div className="dash-card rounded-xl px-4 py-2.5 flex items-center gap-2.5 shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-gray-100 shrink-0" />
+            <span className="text-[13px] font-semibold text-black">{schoolName}</span>
+          </div>
+        )}
       </div>
 
-      {/* Main content: two columns */}
-      <div className="flex gap-3 flex-1 min-h-0">
-        {/* ─── LEFT COLUMN ─── */}
+      {/* ─── MAIN GRID ─── */}
+      <div className="flex flex-col lg:flex-row gap-3 flex-1 min-h-0">
+        {/* LEFT COLUMN */}
         <div className="flex-1 min-w-0 flex flex-col gap-3">
-          {/* Assignments (wider) + Exams (narrower) */}
-          <div className="grid grid-cols-5 gap-3 shrink-0">
-            <div className="col-span-3">
-              <AssignmentsCard assignments={myAssignments} teacherMap={teacherMap} studentId={user.id} />
+          {/* Assignments + Exams row */}
+          <div className="flex flex-col sm:flex-row gap-3 flex-[2] min-h-0">
+            <div className="flex-[3] min-w-0">
+              <AssignmentsCard
+                assignments={myAssignments}
+                completedAssignments={completedAssignments}
+                gradedItems={gradedItems}
+                teacherMap={teacherMap}
+                studentId={user.id}
+              />
             </div>
-            <div className="col-span-2">
-              <ExamsCard exams={myExams} teacherMap={teacherMap} />
+            <div className="flex-[2] min-w-0">
+              <ExamsCard exams={myExams} teacherMap={teacherMap} studentId={user.id} />
             </div>
           </div>
 
-          {/* Calendar takes remaining space */}
-          <CalendarCard />
+          {/* Planner */}
+          <div className="flex-1 min-h-0">
+            <PlannerCard tasks={plannerTasks} />
+          </div>
         </div>
 
-        {/* ─── RIGHT COLUMN ─── */}
-        <div className="w-64 xl:w-72 shrink-0 flex flex-col gap-3">
-          {/* Timetable */}
-          <Card className="border-0 shadow-sm flex-1 min-h-0 flex flex-col">
-            <CardHeader className="pb-2 px-4 pt-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-sm font-bold">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-50">
-                    <Clock className="h-3.5 w-3.5 text-[#1e3a5f]" />
-                  </div>
-                  Timetable
-                </CardTitle>
-                <span className="text-[11px] font-semibold text-gray-500">{dayNames[today.getDay()]}</span>
-              </div>
-            </CardHeader>
-            <CardContent className="flex-1 px-4 pb-3 pt-1 overflow-y-auto">
-              {todaySlots.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                  <Calendar className="h-6 w-6 text-gray-200 mb-1.5" />
-                  <p className="text-xs font-medium text-gray-400">No classes today</p>
-                  <p className="text-[10px] text-gray-300 mt-0.5">Schedule will appear here</p>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {todaySlots.map((slot) => (
-                    <div key={slot.id} className="rounded-lg border border-gray-100 px-3 py-2">
-                      <p className="text-xs font-semibold text-gray-800">{slot.subject_name}</p>
-                      <p className="text-[10px] text-gray-400">
-                        {slot.start_time?.slice(0, 5)} - {slot.end_time?.slice(0, 5)}
-                        {slot.room && <span> · {slot.room}</span>}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        {/* RIGHT COLUMN */}
+        <div className="w-full lg:w-[260px] shrink-0 flex flex-col gap-3">
+          {/* Schedule — matches assignments/exams height */}
+          <div className="flex-[2] min-h-0">
+            <ScheduleCard slots={slotsMap} initialDayOffset={0} />
+          </div>
 
-          {/* Messages */}
-          <Card className="border-0 shadow-sm shrink-0">
-            <CardHeader className="pb-1 px-4 pt-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-sm font-bold">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-50">
-                    <MessageCircle className="h-3.5 w-3.5 text-[#1e3a5f]" />
-                  </div>
-                  Messages
-                </CardTitle>
-                <Link href="/dashboard/student/chat" className="text-[11px] font-medium text-[#1e3a5f] hover:text-[#1e3a5f]">
-                  View all &rarr;
-                </Link>
-              </div>
-            </CardHeader>
-            <CardContent className="px-4 pb-3 pt-1">
-              <div className="flex flex-col items-center justify-center py-3 text-center">
-                <MessageCircle className="h-5 w-5 text-gray-200 mb-1" />
-                <p className="text-[11px] font-medium text-gray-400">No messages yet</p>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Vacation countdown */}
+          <div className="dash-card rounded-2xl px-4 py-3 shrink-0">
+            <p className="text-[13px] font-semibold text-black">
+              <span className="mr-1">🌴</span>
+              {vacationDays !== null
+                ? `Next vacation in ${vacationDays} days`
+                : "No upcoming vacation"}
+            </p>
+          </div>
 
           {/* Announcements */}
-          <Card className="border-0 shadow-sm shrink-0">
-            <CardHeader className="pb-1 px-4 pt-3">
-              <CardTitle className="flex items-center gap-2 text-sm font-bold">
-                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-50">
-                  <Megaphone className="h-3.5 w-3.5 text-[#1e3a5f]" />
-                </div>
-                Announcements
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-3 pt-1">
-              {announcements.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-3 text-center">
-                  <Megaphone className="h-5 w-5 text-gray-200 mb-1" />
-                  <p className="text-[11px] font-medium text-gray-400">No announcements</p>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {announcements.map((a) => (
-                    <div key={a.id} className="rounded-lg border border-gray-100 px-3 py-2">
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-xs font-semibold text-gray-800 truncate">{a.title}</p>
-                        {a.priority === "urgent" && (
-                          <span className="text-[8px] font-bold uppercase bg-red-50 text-red-600 px-1 py-0.5 rounded shrink-0">Urgent</span>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-gray-400 line-clamp-2 mt-0.5">{a.content}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <div className="flex-1 min-h-0">
+            <AnnouncementsCard announcements={announcementsWithAuthors} />
+          </div>
+
         </div>
       </div>
     </div>

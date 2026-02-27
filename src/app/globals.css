@@ -7,8 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-inter);
+  --font-libre: var(--font-libre);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -124,6 +125,30 @@
   .glass-footer {
     background: rgba(255,255,255,0.02);
     border: 1px solid rgba(255,255,255,0.06);
+  }
+  .font-libre {
+    font-family: var(--font-libre), Georgia, serif;
+  }
+  .noise-bg {
+    background-color: #2D2D2D;
+    position: relative;
+  }
+  .noise-bg::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 256px 256px;
+  }
+  .ai-orb {
+    background: radial-gradient(circle at 30% 30%, #92D1FF 0%, #0094FF 50%, #E45C12 100%);
+  }
+  .dash-card {
+    border: 1px solid rgba(0,0,0,0.26);
   }
 }
 

@@ -1,8 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { BookOpen, GraduationCap, Clock, CheckCircle2, ChevronLeft, ChevronRight } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Image from "next/image";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
@@ -17,6 +21,23 @@ interface Assignment {
   created_by: string;
 }
 
+interface CompletedAssignment {
+  id: string;
+  title: string;
+  subject: string;
+  due_date: string;
+  created_by: string;
+}
+
+interface GradedItem {
+  id: string;
+  assignment_title: string;
+  subject: string;
+  grade: number;
+  feedback: string | null;
+  created_by: string;
+}
+
 interface Exam {
   id: string;
   title: string;
@@ -27,18 +48,84 @@ interface Exam {
   created_by: string;
 }
 
-/* ─── Assignments Card ─── */
+interface TimetableSlot {
+  id: string;
+  start_time: string;
+  end_time: string;
+  room: string | null;
+  subject_name?: string;
+  teacher_name?: string;
+}
+
+interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  priority: string;
+  created_at: string;
+  author_name?: string;
+}
+
+interface PlannerTask {
+  id: string;
+  title: string;
+  subject: string;
+  teacher_name: string;
+  due_date: string;
+}
+
+/* ─── Done Button Component ─── */
+function DoneButton({
+  done,
+  overdue,
+  onClick,
+  disabled,
+}: {
+  done: boolean;
+  overdue: boolean;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  let bg = "#2D2D2D";
+  if (done) bg = "linear-gradient(to top, #12E43C, #2D2D2D)";
+  else if (overdue) bg = "linear-gradient(to top, #B10707, #2D2D2D)";
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="flex items-center justify-center shrink-0 transition-all active:scale-95"
+      style={{
+        width: 66,
+        height: 29,
+        borderRadius: 49,
+        background: bg,
+      }}
+    >
+      <Check className="h-3.5 w-3.5 text-white" />
+    </button>
+  );
+}
+
+/* ─── Assignments Card with Grades Tab ─── */
 export function AssignmentsCard({
   assignments,
+  completedAssignments,
+  gradedItems,
   teacherMap,
   studentId,
 }: {
   assignments: Assignment[];
+  completedAssignments: CompletedAssignment[];
+  gradedItems: GradedItem[];
   teacherMap: Record<string, string>;
   studentId: string;
 }) {
   const [localAssignments, setLocalAssignments] = useState(assignments);
   const [completingId, setCompletingId] = useState<string | null>(null);
+  const [doneIds, setDoneIds] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<"assignments" | "grades">("assignments");
+  const [expandedGrade, setExpandedGrade] = useState<string | null>(null);
   const supabase = createClient();
   const now = new Date();
 
@@ -50,98 +137,153 @@ export function AssignmentsCard({
       .eq("assignment_id", assignmentId)
       .eq("student_id", studentId);
     if (error) { toast.error("Failed to mark as done"); setCompletingId(null); return; }
-    setLocalAssignments((prev) => prev.filter((a) => a.id !== assignmentId));
+    setDoneIds((prev) => new Set(prev).add(assignmentId));
     toast.success("Marked as done!");
     setCompletingId(null);
   };
 
   const isOverdue = (d: string) => new Date(d) < now;
-  const fmt = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const fmt = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "long" });
+
+  const pendingSorted = [...localAssignments].sort((a, b) => {
+    const aOver = isOverdue(a.due_date) ? 0 : 1;
+    const bOver = isOverdue(b.due_date) ? 0 : 1;
+    if (aOver !== bOver) return aOver - bOver;
+    return new Date(a.due_date).getTime() - new Date(b.due_date).getTime();
+  });
+
+  const fillerCount = Math.max(0, 4 - pendingSorted.length);
+  const fillers = completedAssignments
+    .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
+    .slice(0, fillerCount);
 
   return (
-    <Card className="border-0 shadow-sm">
-      <CardHeader className="pb-2 px-4 pt-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-sm font-bold">
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-50">
-              <BookOpen className="h-3.5 w-3.5 text-[#1e3a5f]" />
-            </div>
-            Assignments
-            {localAssignments.length > 0 && (
-              <span className="text-[11px] font-bold bg-blue-50 text-[#1e3a5f] rounded-full px-1.5 py-0.5">
-                {localAssignments.length}
-              </span>
-            )}
-          </CardTitle>
-          <Link href="/dashboard/student/assignments" className="text-[11px] font-medium text-[#1e3a5f] hover:text-[#1e3a5f]">
-            View all &rarr;
-          </Link>
-        </div>
-      </CardHeader>
-      <CardContent className="px-4 pb-3 pt-1">
-        {localAssignments.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-4 text-center">
-            <CheckCircle2 className="h-7 w-7 text-gray-200 mb-1.5" />
-            <p className="text-xs font-medium text-gray-400">All caught up!</p>
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            {localAssignments.slice(0, 4).map((a) => {
-              const overdue = isOverdue(a.due_date);
-              const completing = completingId === a.id;
-              return (
-                <div
-                  key={a.id}
-                  className={`group rounded-lg border px-3 py-2 transition-all ${
-                    overdue ? "border-red-200 bg-red-50/40" : "border-gray-100 hover:border-blue-100"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
+    <div className="dash-card rounded-2xl h-full flex flex-col">
+      {/* Header */}
+      <div className="flex items-center gap-0 px-4 pt-3 pb-2">
+        <Image src="/Icons/black/assignments or tasks without noti black.svg" alt="" width={24} height={24} className="shrink-0" />
+        <div className="w-px h-4 bg-gray-300 mx-2.5" />
+        <button
+          onClick={() => setActiveTab("assignments")}
+          className={`text-[16px] font-semibold transition-colors ${activeTab === "assignments" ? "text-black" : "text-[#9A9A9A]"}`}
+        >
+          Assignments
+        </button>
+        <button
+          onClick={() => setActiveTab("grades")}
+          className={`text-[16px] font-semibold ml-4 transition-colors ${activeTab === "grades" ? "text-black" : "text-[#9A9A9A]"}`}
+        >
+          Grades
+        </button>
+      </div>
+
+      {/* Separator below header */}
+      <div className="h-px bg-black/10" />
+
+      {/* Content */}
+      <div className="flex-1 px-4 pb-2 flex flex-col min-h-0">
+        {activeTab === "assignments" ? (
+          <div className="flex-1 flex flex-col">
+            <div className="flex-1">
+              {pendingSorted.slice(0, 4).map((a, idx) => {
+                const overdue = isOverdue(a.due_date);
+                const completing = completingId === a.id;
+                const isDone = doneIds.has(a.id);
+                return (
+                  <div key={a.id}>
+                    <div className="flex items-center justify-between" style={{ height: 73 }}>
+                      <div className="min-w-0 flex-1 mr-3">
                         <Link
                           href={`/dashboard/student/assignments/${a.id}`}
-                          className="text-[13px] font-semibold text-gray-800 hover:text-[#1e3a5f] transition-colors truncate"
+                          className="text-[16px] font-semibold block truncate transition-colors text-black hover:opacity-70"
                         >
                           {a.title}
                         </Link>
-                        {overdue && (
-                          <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider bg-red-100 text-red-600 rounded px-1 py-0.5">
-                            Overdue
-                          </span>
-                        )}
+                        <div className="flex items-center gap-2 text-[10px] font-bold text-[#9A9A9A] mt-0.5">
+                          <span className="flex items-center gap-0.5"><Image src="/Icons/grey/subject.svg" alt="" width={10} height={10} />{a.subject}</span>
+                          <span className="flex items-center gap-0.5"><Image src="/Icons/grey/teacher:person.svg" alt="" width={10} height={10} />{teacherMap[a.created_by] || "Teacher"}</span>
+                          <span className="flex items-center gap-0.5"><Image src="/Icons/grey/time.svg" alt="" width={10} height={10} />{fmt(a.due_date)}</span>
+                        </div>
                       </div>
-                      <p className="text-[11px] text-gray-400 truncate">
-                        {a.subject}
-                        <span className="mx-1 text-gray-200">&bull;</span>
-                        <Clock className="h-2.5 w-2.5 inline" /> {fmt(a.due_date)}
-                        <span className="mx-1 text-gray-200">&bull;</span>
-                        {teacherMap[a.created_by] || "Teacher"}
-                      </p>
+                      <DoneButton
+                        done={isDone}
+                        overdue={overdue && !isDone}
+                        onClick={() => markAsDone(a.id)}
+                        disabled={completing || isDone}
+                      />
                     </div>
-                    <button
-                      onClick={() => markAsDone(a.id)}
-                      disabled={completing}
-                      className={`flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-all shrink-0 ${
-                        completing ? "bg-gray-100 text-gray-400" : "bg-blue-50 text-[#1e3a5f] hover:bg-blue-100 active:scale-95"
-                      }`}
-                    >
-                      <CheckCircle2 className="h-3 w-3" />
-                      {completing ? "..." : "Done"}
-                    </button>
+                    <div className="-mx-4 h-px bg-black/10" />
                   </div>
+                );
+              })}
+              {fillers.map((a) => (
+                <div key={a.id}>
+                  <div className="flex items-center justify-between opacity-60" style={{ height: 73 }}>
+                    <div className="min-w-0 flex-1 mr-3">
+                      <p className="text-[16px] font-semibold text-black truncate">{a.title}</p>
+                      <div className="flex items-center gap-2 text-[10px] font-bold text-[#9A9A9A] mt-0.5">
+                        <span className="flex items-center gap-0.5"><Image src="/Icons/grey/subject.svg" alt="" width={10} height={10} />{a.subject}</span>
+                        <span className="flex items-center gap-0.5"><Image src="/Icons/grey/teacher:person.svg" alt="" width={10} height={10} />{teacherMap[a.created_by] || "Teacher"}</span>
+                        <span className="flex items-center gap-0.5"><Image src="/Icons/grey/time.svg" alt="" width={10} height={10} />{fmt(a.due_date)}</span>
+                      </div>
+                    </div>
+                    <DoneButton done={true} overdue={false} />
+                  </div>
+                  <div className="-mx-4 h-px bg-black/10" />
                 </div>
-              );
-            })}
-            {localAssignments.length > 4 && (
-              <Link href="/dashboard/student/assignments" className="block text-center text-[11px] font-medium text-[#1e3a5f] hover:text-[#1e3a5f] pt-0.5">
-                +{localAssignments.length - 4} more
-              </Link>
-            )}
+              ))}
+              {pendingSorted.length === 0 && fillers.length === 0 && (
+                <div className="flex-1 flex items-center justify-center py-6">
+                  <p className="text-sm text-[#9A9A9A]">All caught up!</p>
+                </div>
+              )}
+            </div>
+            <div className="-mx-4 h-px bg-black/10" />
+            <Link href="/dashboard/student/assignments" className="block text-center text-[13px] text-[#9A9A9A] hover:text-black transition-colors py-2">
+              View all ↓
+            </Link>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col">
+            <div className="flex-1">
+              {gradedItems.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center py-6">
+                  <p className="text-sm text-[#9A9A9A]">No grades yet</p>
+                </div>
+              ) : (
+                gradedItems.slice(0, 4).map((g) => (
+                  <div key={g.id}>
+                    <div
+                      className="py-2.5 cursor-pointer"
+                      onClick={() => setExpandedGrade(expandedGrade === g.id ? null : g.id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0 flex-1 mr-3">
+                          <p className="text-[16px] font-semibold text-black truncate">{g.assignment_title}</p>
+                          <div className="flex items-center gap-2 text-[10px] font-bold text-[#9A9A9A] mt-0.5">
+                            <span>{g.subject}</span>
+                            <span>{teacherMap[g.created_by] || "Teacher"}</span>
+                          </div>
+                        </div>
+                        <span className="text-[16px] font-bold text-black shrink-0">{g.grade}%</span>
+                      </div>
+                      {expandedGrade === g.id && g.feedback && (
+                        <p className="text-[10px] text-[#9A9A9A] mt-1 italic">{g.feedback}</p>
+                      )}
+                    </div>
+                    <div className="-mx-4 h-px bg-black/10" />
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="-mx-4 h-px bg-black/10" />
+            <Link href="/dashboard/student/grades" className="block text-center text-[13px] text-[#9A9A9A] hover:text-black transition-colors py-2">
+              View all ↓
+            </Link>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -149,126 +291,319 @@ export function AssignmentsCard({
 export function ExamsCard({
   exams,
   teacherMap,
+  studentId,
 }: {
   exams: Exam[];
   teacherMap: Record<string, string>;
+  studentId: string;
 }) {
   const now = new Date();
-  const isOverdue = (d: string) => new Date(d) < now;
+  const [doneIds, setDoneIds] = useState<Set<string>>(new Set());
+  const supabase = createClient();
+  const isPast = (d: string) => new Date(d) < now;
+
+  const markExamDone = async (examId: string) => {
+    const { error } = await supabase
+      .from("exam_students")
+      .update({ marked_done: true })
+      .eq("exam_id", examId)
+      .eq("student_id", studentId);
+    if (!error) {
+      setDoneIds((prev) => new Set(prev).add(examId));
+      toast.success("Exam marked as read!");
+    } else {
+      setDoneIds((prev) => new Set(prev).add(examId));
+    }
+  };
 
   return (
-    <Card className="border-0 shadow-sm">
-      <CardHeader className="pb-2 px-4 pt-3">
-        <CardTitle className="flex items-center gap-2 text-sm font-bold">
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-50">
-            <GraduationCap className="h-3.5 w-3.5 text-[#1e3a5f]" />
-          </div>
-          Exams
-          {exams.length > 0 && (
-            <span className="text-[11px] font-bold bg-blue-50 text-[#1e3a5f] rounded-full px-1.5 py-0.5">
-              {exams.length}
-            </span>
-          )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="px-4 pb-3 pt-1">
-        {exams.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-4 text-center">
-            <GraduationCap className="h-7 w-7 text-gray-200 mb-1.5" />
-            <p className="text-xs font-medium text-gray-400">No upcoming exams</p>
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            {exams.slice(0, 3).map((e) => {
-              const overdue = isOverdue(e.exam_date);
-              const d = new Date(e.exam_date);
+    <div className="dash-card rounded-2xl h-full flex flex-col">
+      <div className="flex items-center gap-0 px-4 pt-3 pb-2">
+        <Image src="/Icons/black/exams black.svg" alt="" width={24} height={24} className="shrink-0" />
+        <div className="w-px h-4 bg-gray-300 mx-2.5" />
+        <span className="text-[16px] font-semibold text-black">Exams</span>
+      </div>
+      {/* Separator below header */}
+      <div className="h-px bg-black/10" />
+      <div className="flex-1 px-4 pb-2 flex flex-col min-h-0">
+        <div className="flex-1">
+          {exams.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center py-6">
+              <p className="text-sm text-[#9A9A9A]">No upcoming exams</p>
+            </div>
+          ) : (
+            exams.slice(0, 4).map((e) => {
+              const past = isPast(e.exam_date);
+              const isDone = doneIds.has(e.id);
+              const overdue = past && !isDone;
               return (
-                <div
-                  key={e.id}
-                  className={`rounded-lg border px-3 py-2 transition-all ${
-                    overdue ? "border-gray-200 bg-gray-50/60 opacity-60" : "border-gray-100 hover:border-blue-100"
-                  }`}
-                >
-                  <p className="text-[13px] font-semibold text-gray-800 truncate">{e.title}</p>
-                  <p className="text-[11px] text-gray-400 truncate">
-                    {e.subject}
-                    <span className="mx-1 text-gray-200">&bull;</span>
-                    {d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                    <span className="mx-1 text-gray-200">&bull;</span>
-                    <span className="text-[#1e3a5f] font-medium">{e.duration_minutes}min</span>
-                  </p>
+                <div key={e.id}>
+                  <div className="flex items-center justify-between" style={{ height: 73 }}>
+                    <div className="min-w-0 flex-1 mr-3">
+                      <p className="text-[16px] font-semibold text-black truncate">{e.title}</p>
+                      <div className="flex items-center gap-2 text-[10px] font-bold text-[#9A9A9A] mt-0.5">
+                        <span className="flex items-center gap-0.5"><Image src="/Icons/grey/subject.svg" alt="" width={10} height={10} />{e.subject}</span>
+                        <span className="flex items-center gap-0.5"><Image src="/Icons/grey/teacher:person.svg" alt="" width={10} height={10} />{teacherMap[e.created_by] || "Teacher"}</span>
+                        <span className="flex items-center gap-0.5"><Image src="/Icons/grey/time.svg" alt="" width={10} height={10} />
+                          {new Date(e.exam_date).toLocaleDateString("en-GB", { day: "numeric", month: "long" })}
+                        </span>
+                      </div>
+                    </div>
+                    <DoneButton
+                      done={isDone}
+                      overdue={overdue}
+                      onClick={() => markExamDone(e.id)}
+                      disabled={isDone}
+                    />
+                  </div>
+                  <div className="-mx-4 h-px bg-black/10" />
                 </div>
               );
-            })}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+            })
+          )}
+        </div>
+        <div className="-mx-4 h-px bg-black/10" />
+        <Link href="/dashboard/student/assignments" className="block text-center text-[13px] text-[#9A9A9A] hover:text-black transition-colors py-2">
+          View all ↓
+        </Link>
+      </div>
+    </div>
   );
 }
 
-/* ─── Calendar Card (monthly view) ─── */
-export function CalendarCard() {
-  const [monthOffset, setMonthOffset] = useState(0);
+/* ─── Schedule Card ─── */
+export function ScheduleCard({
+  slots,
+  initialDayOffset,
+}: {
+  slots: Record<number, TimetableSlot[]>;
+  initialDayOffset: number;
+}) {
+  const [dayOffset, setDayOffset] = useState(0);
   const today = new Date();
+  const viewDate = new Date(today);
+  viewDate.setDate(viewDate.getDate() + dayOffset);
+  const dow = viewDate.getDay();
+  const currentSlots = slots[dow] || [];
 
-  const viewDate = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
-  const year = viewDate.getFullYear();
-  const month = viewDate.getMonth();
-  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const isWeekend = dow === 0 || dow === 6;
+  const isToday = dayOffset === 0;
 
-  const firstDayOfMonth = new Date(year, month, 1);
-  const lastDayOfMonth = new Date(year, month + 1, 0);
-  const startDay = (firstDayOfMonth.getDay() + 6) % 7; // Monday = 0
-  const totalDays = lastDayOfMonth.getDate();
-
-  const cells: (number | null)[] = [];
-  for (let i = 0; i < startDay; i++) cells.push(null);
-  for (let d = 1; d <= totalDays; d++) cells.push(d);
-  while (cells.length < 42) cells.push(null);
-
-  const isToday = (d: number | null) =>
-    d !== null && d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+  const dayLabel = isToday
+    ? "Today"
+    : viewDate.toLocaleDateString("en-GB", { weekday: "long" });
 
   return (
-    <Card className="border-0 shadow-sm flex-1 flex flex-col">
-      <CardHeader className="pb-1 px-4 pt-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-bold">Calendar</CardTitle>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setMonthOffset((m) => m - 1)} className="p-1 rounded hover:bg-gray-100 transition-colors">
-              <ChevronLeft className="h-3.5 w-3.5 text-gray-400" />
-            </button>
-            <span className="text-xs font-semibold text-gray-600 min-w-[120px] text-center">{monthNames[month]} {year}</span>
-            <button onClick={() => setMonthOffset((m) => m + 1)} className="p-1 rounded hover:bg-gray-100 transition-colors">
-              <ChevronRight className="h-3.5 w-3.5 text-gray-400" />
-            </button>
+    <div className="dash-card rounded-2xl flex flex-col h-full">
+      <div className="flex items-center gap-0 px-4 pt-3 pb-1">
+        <Image src="/Icons/black/schedule black.svg" alt="" width={24} height={24} className="shrink-0" />
+        <div className="w-px h-4 bg-gray-300 mx-2.5" />
+        <span className="text-[16px] font-semibold text-black">Schedule</span>
+      </div>
+      {/* Separator below header */}
+      <div className="h-px bg-black/10" />
+      <div className="flex items-center justify-between px-4 py-1.5">
+        <button onClick={() => setDayOffset((d) => d - 1)} className="p-1 hover:bg-gray-100 rounded transition-colors">
+          <ChevronLeft className="h-3.5 w-3.5 text-[#9A9A9A]" />
+        </button>
+        <span className="text-[13px] font-semibold text-black">{dayLabel}</span>
+        <button onClick={() => setDayOffset((d) => d + 1)} className="p-1 hover:bg-gray-100 rounded transition-colors">
+          <ChevronRight className="h-3.5 w-3.5 text-[#9A9A9A]" />
+        </button>
+      </div>
+      {/* Separator below "Today" */}
+      <div className="h-px bg-black/10" />
+      <div className="flex-1 px-4 pb-3 overflow-y-auto min-h-0">
+        {isWeekend || currentSlots.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-[13px] text-[#9A9A9A]">{isWeekend ? "No school today" : "No classes scheduled"}</p>
           </div>
+        ) : (
+          <div>
+            {currentSlots.map((slot, idx) => (
+              <div key={slot.id}>
+                <div className="flex items-center gap-3 py-2.5">
+                  <span className="text-[13px] font-bold text-[#9A9A9A] w-10 shrink-0 tabular-nums">{slot.start_time?.slice(0, 5)}</span>
+                  <p className="text-[14px] font-semibold text-black truncate flex-1 min-w-0">{slot.subject_name || "Class"}</p>
+                  {slot.teacher_name && (
+                    <span className="text-[10px] font-bold text-[#9A9A9A] shrink-0">{slot.teacher_name}</span>
+                  )}
+                </div>
+                <div className="-mx-4 h-px bg-black/10" />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Planner Card ─── */
+export function PlannerCard({
+  tasks,
+}: {
+  tasks: PlannerTask[];
+}) {
+  const [weekOffset, setWeekOffset] = useState(0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const dayOfWeek = (today.getDay() + 6) % 7;
+  const mondayBase = new Date(today);
+  mondayBase.setDate(mondayBase.getDate() - dayOfWeek + weekOffset * 7);
+
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(mondayBase);
+    d.setDate(d.getDate() + i);
+    return d;
+  });
+
+  const isToday = (d: Date) =>
+    d.getDate() === today.getDate() &&
+    d.getMonth() === today.getMonth() &&
+    d.getFullYear() === today.getFullYear();
+
+  const getTasksForDay = (d: Date) =>
+    tasks.filter((t) => {
+      const td = new Date(t.due_date);
+      return td.getDate() === d.getDate() && td.getMonth() === d.getMonth() && td.getFullYear() === d.getFullYear();
+    });
+
+  return (
+    <div className="dash-card rounded-2xl flex flex-col h-full">
+      <div className="flex items-center justify-between px-4 pt-3 pb-2">
+        <div className="flex items-center gap-0">
+          <Image src="/Icons/black/planner black.svg" alt="" width={24} height={24} className="shrink-0" />
+          <div className="w-px h-4 bg-gray-300 mx-2.5" />
+          <span className="text-[16px] font-semibold text-black">Planner</span>
         </div>
-      </CardHeader>
-      <CardContent className="px-4 pb-3 pt-1 flex-1">
-        <div className="grid grid-cols-7 gap-0.5 mb-1">
-          {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
-            <div key={i} className="text-center text-[10px] font-semibold text-gray-400 py-1">{d}</div>
-          ))}
+        <div className="flex items-center gap-1">
+          <button onClick={() => setWeekOffset((w) => w - 1)} className="p-1 hover:bg-gray-100 rounded transition-colors">
+            <ChevronLeft className="h-3.5 w-3.5 text-[#9A9A9A]" />
+          </button>
+          <button onClick={() => setWeekOffset((w) => w + 1)} className="p-1 hover:bg-gray-100 rounded transition-colors">
+            <ChevronRight className="h-3.5 w-3.5 text-[#9A9A9A]" />
+          </button>
         </div>
-        <div className="grid grid-cols-7 gap-0.5">
-          {cells.slice(0, 35).map((d, i) => (
-            <div
-              key={i}
-              className={`flex items-center justify-center rounded-md h-7 text-xs font-medium transition-colors ${
-                d === null
-                  ? ""
-                  : isToday(d)
-                  ? "bg-blue-500 text-white font-bold"
-                  : "text-gray-600 hover:bg-gray-50"
-              }`}
-            >
-              {d}
-            </div>
-          ))}
+      </div>
+      {/* Separator below header */}
+      <div className="h-px bg-black/10" />
+      <div className="flex-1 px-2 pb-3 pt-2 min-h-0">
+        <div className="grid grid-cols-7 gap-1.5 h-full">
+          {days.map((d, i) => {
+            const isTod = isToday(d);
+            const dayTasks = getTasksForDay(d);
+            return (
+              <div key={i} className="flex flex-col min-h-0">
+                <div
+                  className="text-center py-2.5 rounded-xl text-[24px] font-black text-white"
+                  style={{ backgroundColor: "#2D2D2D" }}
+                >
+                  {isTod ? "Today" : d.getDate()}
+                </div>
+                <div className="flex-1 mt-1 rounded-lg bg-gray-50 p-1 space-y-0.5 overflow-hidden">
+                  {dayTasks.slice(0, 2).map((t) => (
+                    <div key={t.id} className="bg-white rounded-lg px-1.5 py-1 border border-gray-100">
+                      <p className="text-[10px] font-semibold text-black leading-tight line-clamp-3">{t.title}</p>
+                      <div className="flex items-center gap-0.5 mt-0.5">
+                        <Image src="/Icons/grey/subject.svg" alt="" width={8} height={8} />
+                        <p className="text-[9px] text-[#9A9A9A] truncate">{t.subject}</p>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <Image src="/Icons/grey/teacher:person.svg" alt="" width={8} height={8} />
+                        <p className="text-[9px] text-[#9A9A9A] truncate">{t.teacher_name}</p>
+                      </div>
+                    </div>
+                  ))}
+                  {dayTasks.length > 2 && (
+                    <p className="text-[9px] text-[#9A9A9A] text-center">+{dayTasks.length - 2}</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Announcements Card ─── */
+export function AnnouncementsCard({
+  announcements,
+}: {
+  announcements: Announcement[];
+}) {
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Yesterday";
+    if (diffDays <= 6) return `${diffDays} days ago`;
+    if (diffDays <= 13) return "1 week ago";
+    if (diffDays <= 35) return `${Math.floor(diffDays / 7)} weeks ago`;
+    return date.toLocaleDateString("en-GB", { day: "numeric", month: "numeric", year: "2-digit" });
+  };
+
+  return (
+    <div className="dash-card rounded-2xl flex flex-col h-full">
+      <div className="flex items-center gap-0 px-4 pt-3 pb-2">
+        <Image src="/Icons/black/home black.svg" alt="" width={24} height={24} className="shrink-0" />
+        <div className="w-px h-4 bg-gray-300 mx-2.5" />
+        <span className="text-[16px] font-semibold text-black">Announcements</span>
+      </div>
+      {/* Separator below header */}
+      <div className="h-px bg-black/10" />
+      <div className="flex-1 px-4 pb-2 flex flex-col min-h-0">
+        {announcements.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-[13px] text-[#9A9A9A]">No announcements</p>
+          </div>
+        ) : (
+          <div className="flex-1">
+            {announcements.slice(0, 3).map((a) => (
+              <div key={a.id}>
+                <div className="cursor-pointer hover:opacity-80 transition-opacity py-2">
+                  <p className="text-[16px] font-semibold text-black leading-snug line-clamp-2">{a.title}</p>
+                  <div className="flex items-center gap-2 text-[10px] font-bold text-[#9A9A9A] mt-0.5">
+                    {a.author_name && <span className="flex items-center gap-0.5"><Image src="/Icons/grey/teacher:person.svg" alt="" width={10} height={10} />{a.author_name}</span>}
+                    <span className="flex items-center gap-0.5"><Image src="/Icons/grey/time.svg" alt="" width={10} height={10} />{formatDate(a.created_at)}</span>
+                  </div>
+                </div>
+                <div className="-mx-4 h-px bg-black/10" />
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="-mx-4 h-px bg-black/10" />
+        <Link href="/dashboard/student/resources" className="block text-center text-[13px] text-[#9A9A9A] hover:text-black transition-colors py-2">
+          View all ↓
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Ask AI Button ─── */
+export function AskAIButton() {
+  return (
+    <Link
+      href="/dashboard/student/ai-tutor"
+      className="dash-card rounded-2xl px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors"
+    >
+      <Image src="/Icons/ai.svg" alt="AI" width={32} height={32} className="shrink-0" />
+      <div>
+        <span className="text-[14px] font-semibold text-black">Ask </span>
+        <span className="text-[14px] font-libre font-bold" style={{
+          background: "radial-gradient(circle at 30% 30%, #92D1FF 0%, #0094FF 50%, #E45C12 100%)",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+        }}>AI</span>
+      </div>
+    </Link>
   );
 }

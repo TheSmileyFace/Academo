@@ -1,4 +1,5 @@
 import { DashboardSidebar } from "@/components/dashboard-sidebar";
+import { AiFloatingBall } from "@/components/ai-floating-ball";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -20,10 +21,11 @@ export default async function StudentLayout({ children }: { children: React.Reac
   const userName = profile?.full_name || user.user_metadata?.full_name || undefined;
 
   return (
-    <div className="min-h-screen bg-gray-50/50">
+    <div className="h-screen overflow-hidden noise-bg flex p-2 pl-0">
       <DashboardSidebar role="student" userName={userName} />
-      <main className="ml-64 min-h-screen">
-        <div className="p-8">{children}</div>
+      <main className="flex-1 bg-white rounded-2xl overflow-hidden relative z-[1]">
+        <div className="h-full overflow-auto px-6 py-5">{children}</div>
+        <AiFloatingBall />
       </main>
     </div>
   );

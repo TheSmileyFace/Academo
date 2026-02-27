@@ -15,8 +15,6 @@ import {
   BookOpen,
   Loader2,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -28,6 +26,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import Link from "next/link";
+import Image from "next/image";
 
 interface Task {
   id: string;
@@ -41,12 +40,13 @@ interface Task {
 
 function FilterSection({ title, open, onToggle, children }: { title: string; open: boolean; onToggle: () => void; children: React.ReactNode }) {
   return (
-    <div className="border-b border-gray-100 last:border-b-0">
-      <button onClick={onToggle} className="flex w-full items-center justify-between px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
+    <div>
+      <button onClick={onToggle} className="flex w-full items-center justify-between px-4 py-2.5 text-[13px] font-semibold text-black hover:bg-gray-50/50 transition-colors">
         {title}
-        {open ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+        {open ? <ChevronUp className="h-3.5 w-3.5 text-[#9A9A9A]" /> : <ChevronDown className="h-3.5 w-3.5 text-[#9A9A9A]" />}
       </button>
-      {open && <div className="px-4 pb-3 space-y-1">{children}</div>}
+      <div className="h-px bg-black/10" />
+      {open && <div className="px-4 pb-3 pt-1 space-y-0.5">{children}</div>}
     </div>
   );
 }
@@ -55,27 +55,27 @@ function RadioOption({ label, selected, onClick, count }: { label: string; selec
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors ${selected ? "bg-blue-50 text-[#1e3a5f] font-medium" : "text-gray-600 hover:bg-gray-50"}`}
+      className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-[13px] transition-colors ${selected ? "bg-[#2D2D2D]/5 text-black font-semibold" : "text-[#9A9A9A] hover:bg-gray-50"}`}
     >
       <div className="flex items-center gap-2.5">
-        <div className={`h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center ${selected ? "border-[#1e3a5f]" : "border-gray-300"}`}>
-          {selected && <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />}
+        <div className={`h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center ${selected ? "border-[#2D2D2D]" : "border-gray-300"}`}>
+          {selected && <div className="h-1.5 w-1.5 rounded-full bg-[#2D2D2D]" />}
         </div>
         {label}
       </div>
-      {count !== undefined && <span className={`text-xs ${selected ? "text-[#1e3a5f]" : "text-gray-400"}`}>{count}</span>}
+      {count !== undefined && <span className={`text-[11px] font-bold ${selected ? "text-black" : "text-[#9A9A9A]"}`}>{count}</span>}
     </button>
   );
 }
 
 function StatusBadge({ status }: { status: string }) {
   const config: Record<string, { label: string; className: string }> = {
-    todo: { label: "To Do", className: "bg-blue-50 text-[#1e3a5f]" },
-    done: { label: "Done", className: "bg-blue-100 text-[#1e3a5f]" },
+    todo: { label: "To Do", className: "bg-[#2D2D2D]/5 text-black" },
+    done: { label: "Done", className: "bg-[#2D2D2D] text-white" },
     overdue: { label: "Overdue", className: "bg-red-100 text-red-700" },
   };
   const c = config[status] ?? config.todo;
-  return <Badge className={`${c.className} text-[11px] font-semibold px-2.5 py-0.5 rounded-md`}>{c.label}</Badge>;
+  return <span className={`${c.className} text-[10px] font-bold px-2.5 py-1 rounded-lg inline-block`}>{c.label}</span>;
 }
 
 export default function StudentAssignments() {
@@ -208,30 +208,31 @@ export default function StudentAssignments() {
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-[#1e3a5f]" />
+        <Loader2 className="h-6 w-6 animate-spin text-[#2D2D2D]" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Tasks</h1>
-        <p className="mt-1 text-gray-500">All your assignments and homework in one place</p>
+    <div className="h-full flex flex-col gap-4">
+      <div className="shrink-0 pt-2">
+        <h1 className="text-[22px] font-bold text-black">Tasks</h1>
+        <p className="text-[12px] text-[#9A9A9A] mt-0.5">All your assignments and homework</p>
       </div>
 
-      <div className="flex gap-6">
+      <div className="flex gap-4 flex-1 min-h-0">
         {/* Filter Sidebar */}
-        <div className="w-56 shrink-0 hidden lg:block">
-          <Card className="border-0 shadow-sm sticky top-6">
-            <div className="flex items-center justify-between px-4 pt-4 pb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Filters</span>
+        <div className="w-52 shrink-0 hidden lg:block">
+          <div className="dash-card rounded-2xl sticky top-6">
+            <div className="flex items-center justify-between px-4 pt-3 pb-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A9A9A]">Filters</span>
               {hasActiveFilters && (
-                <button onClick={clearFilters} className="flex items-center gap-1 text-xs text-[#1e3a5f] hover:text-[#1e3a5f] font-medium">
+                <button onClick={clearFilters} className="flex items-center gap-1 text-[10px] text-black font-semibold hover:opacity-70">
                   <X className="h-3 w-3" /> Clear
                 </button>
               )}
             </div>
+            <div className="h-px bg-black/10" />
 
             <FilterSection title="Progress" open={openSections.progress} onToggle={() => toggleSection("progress")}>
               <RadioOption label="All" selected={progressFilter === "all"} onClick={() => setProgressFilter("all")} count={tasks.length} />
@@ -250,27 +251,27 @@ export default function StudentAssignments() {
 
             <FilterSection title="Set by" open={openSections.setBy} onToggle={() => toggleSection("setBy")}>
               <RadioOption label="All teachers" selected={teacherFilter === "all"} onClick={() => setTeacherFilter("all")} />
-              {allTeachers.length === 0 && <p className="px-3 py-2 text-xs text-gray-400">No teachers yet</p>}
+              {allTeachers.length === 0 && <p className="px-3 py-2 text-[10px] text-[#9A9A9A]">No teachers yet</p>}
               {allTeachers.map((teacher) => (
                 <RadioOption key={teacher} label={teacher} selected={teacherFilter === teacher} onClick={() => setTeacherFilter(teacher)} />
               ))}
             </FilterSection>
-          </Card>
+          </div>
         </div>
 
         {/* Task List */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-4">
+        <div className="flex-1 min-w-0 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
             <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input placeholder="Search tasks..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 rounded-xl border-gray-200 bg-white h-9 text-sm" />
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#9A9A9A]" />
+              <Input placeholder="Search tasks..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 rounded-xl border-black/10 bg-white h-9 text-[13px]" />
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">{sortedTasks.length} task{sortedTasks.length !== 1 ? "s" : ""}</span>
+              <span className="text-[10px] font-bold text-[#9A9A9A]">{sortedTasks.length} task{sortedTasks.length !== 1 ? "s" : ""}</span>
               <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="w-36 h-9 rounded-xl border-gray-200 text-sm">
+                <SelectTrigger className="w-32 h-9 rounded-xl border-black/10 text-[13px]">
                   <div className="flex items-center gap-1.5">
-                    <ArrowUpDown className="h-3 w-3 text-gray-400" />
+                    <ArrowUpDown className="h-3 w-3 text-[#9A9A9A]" />
                     <SelectValue />
                   </div>
                 </SelectTrigger>
@@ -284,57 +285,51 @@ export default function StudentAssignments() {
           </div>
 
           {sortedTasks.length === 0 ? (
-            <Card className="border-0 shadow-sm">
-              <CardContent className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-50">
-                  <Inbox className="h-8 w-8 text-gray-300" />
-                </div>
-                <p className="mt-4 text-base font-medium text-gray-400">No tasks yet</p>
-                <p className="mt-1 text-sm text-gray-300">When your teachers assign work, it&apos;ll show up here</p>
-              </CardContent>
-            </Card>
+            <div className="dash-card rounded-2xl flex flex-col items-center justify-center py-16 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-50">
+                <Inbox className="h-7 w-7 text-[#9A9A9A]/40" />
+              </div>
+              <p className="mt-3 text-[14px] font-semibold text-[#9A9A9A]">No tasks yet</p>
+              <p className="mt-1 text-[11px] text-[#9A9A9A]/60">When your teachers assign work, it&apos;ll show up here</p>
+            </div>
           ) : (
-            <Card className="border-0 shadow-sm overflow-hidden">
-              <div className="divide-y divide-gray-100">
-                {sortedTasks.map((task) => {
-                  const isDone = doneTasks.has(task.id);
-                  const due = new Date(task.dueDate);
-                  const isOverdue = !isDone && due < now;
+            <div className="dash-card rounded-2xl overflow-hidden">
+              {sortedTasks.map((task, idx) => {
+                const isDone = doneTasks.has(task.id);
+                const due = new Date(task.dueDate);
+                const isOverdue = !isDone && due < now;
 
-                  return (
-                    <div key={task.id} className="flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-gray-50">
+                return (
+                  <div key={task.id}>
+                    <div className="flex items-center gap-3 px-4 transition-colors hover:bg-gray-50/50" style={{ height: 73 }}>
                       <button onClick={() => toggleDone(task.id)} className="shrink-0">
                         {isDone ? (
-                          <CheckCircle2 className="h-5 w-5 text-[#1e3a5f]" />
+                          <CheckCircle2 className="h-5 w-5 text-[#2D2D2D]" />
                         ) : (
-                          <Circle className="h-5 w-5 text-gray-300 hover:text-[#1e3a5f] transition-colors" />
+                          <Circle className="h-5 w-5 text-[#9A9A9A]/40 hover:text-[#2D2D2D] transition-colors" />
                         )}
                       </button>
 
                       <Link href={`/dashboard/student/assignments/${task.id}`} className="flex-1 min-w-0">
-                        <p className={`text-sm truncate ${isDone ? "text-gray-400 line-through" : "text-gray-900 font-semibold"}`}>
+                        <p className={`text-[16px] truncate ${isDone ? "text-[#9A9A9A] line-through" : "text-black font-semibold"}`}>
                           {task.title}
                         </p>
-                        <p className="text-xs text-gray-400 mt-0.5 truncate">
-                          {task.subject} &bull; {task.className} &bull; {task.teacherName}
-                        </p>
-                      </Link>
-
-                      <div className="flex items-center gap-3 shrink-0">
-                        <StatusBadge status={isDone ? "done" : isOverdue ? "overdue" : "todo"} />
-                        <div className="flex items-center gap-1.5 text-xs text-gray-400 w-36 justify-end">
-                          <CalendarDays className="h-3.5 w-3.5" />
-                          <span>
-                            Due{" "}
-                            {due.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
+                        <div className="flex items-center gap-2 text-[10px] font-bold text-[#9A9A9A] mt-0.5">
+                          <span className="flex items-center gap-0.5"><Image src="/Icons/grey/subject.svg" alt="" width={10} height={10} />{task.subject}</span>
+                          <span className="flex items-center gap-0.5"><Image src="/Icons/grey/teacher:person.svg" alt="" width={10} height={10} />{task.teacherName}</span>
+                          <span className="flex items-center gap-0.5"><Image src="/Icons/grey/time.svg" alt="" width={10} height={10} />
+                            {due.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
                           </span>
                         </div>
-                      </div>
+                      </Link>
+
+                      <StatusBadge status={isDone ? "done" : isOverdue ? "overdue" : "todo"} />
                     </div>
-                  );
-                })}
-              </div>
-            </Card>
+                    {idx < sortedTasks.length - 1 && <div className="h-px bg-black/10" />}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>
