@@ -49,7 +49,7 @@ export function CalendarClient({ schoolId }: { schoolId: string }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#2D2D2D]/30">
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
         <h2 className="text-lg font-bold text-gray-900">New Event</h2>
         <Input

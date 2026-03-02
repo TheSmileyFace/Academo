@@ -100,13 +100,14 @@ export default async function StudentDashboard() {
       }));
   }
 
-  // Fetch exams assigned to this student
+  // Fetch exams assigned to this student (including marked_done status)
   const { data: examLinks } = await supabase
     .from("exam_students")
-    .select("exam_id")
+    .select("exam_id, marked_done")
     .eq("student_id", user.id);
 
   const examIds = (examLinks || []).map((l) => l.exam_id);
+  const doneExamIds = (examLinks || []).filter((l) => l.marked_done).map((l) => l.exam_id);
   let myExams: { id: string; title: string; subject: string; class_name: string; exam_date: string; duration_minutes: number; created_by: string }[] = [];
   if (examIds.length > 0) {
     const { data } = await supabase
@@ -234,6 +235,33 @@ export default async function StudentDashboard() {
     due_date: a.due_date,
   }));
 
+  // Fetch gamification stats
+  const { data: statsRow } = await supabase
+    .from("student_stats")
+    .select("total_points, current_streak, longest_streak, lives")
+    .eq("student_id", user.id)
+    .single();
+
+  // Fetch recent behavior events (for student to see their own)
+  const { data: recentBehavior } = await supabase
+    .from("behavior_events")
+    .select("id, type, reason, points, created_at")
+    .eq("student_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(3);
+
+  // Fetch attendance rate (last 30 days)
+  const thirtyAgo = new Date();
+  thirtyAgo.setDate(thirtyAgo.getDate() - 30);
+  const { data: myAttendance } = await supabase
+    .from("attendance")
+    .select("status")
+    .eq("student_id", user.id)
+    .gte("date", thirtyAgo.toISOString().split("T")[0]);
+  const attTotal = (myAttendance || []).length;
+  const attPresent = (myAttendance || []).filter((a) => a.status === "present").length;
+  const attendanceRate = attTotal > 0 ? Math.round((attPresent / attTotal) * 100) : null;
+
   // Vacation countdown — use events table if available
   let vacationDays: number | null = null;
   if (schoolId) {
@@ -263,19 +291,19 @@ export default async function StudentDashboard() {
       {/* ─── TOP BAR ─── */}
       <div className="flex items-start justify-between shrink-0" style={{ paddingTop: 23 }}>
         <div>
-          <p className="text-[12px] text-[#9A9A9A]">
+          <p className="text-[12px] text-[#9A9A9A] dark:text-[#A0A0A0]">
             {dayNames[today.getDay()]}, {today.getDate()} {monthNames[today.getMonth()]}
           </p>
-          <h1 className="text-[22px] leading-tight mt-0.5" style={{ marginTop: 0 }}>
+          <h1 className="text-[22px] leading-tight mt-0.5 text-[#2d2d2d] dark:text-white" style={{ marginTop: 0 }}>
             <span className="mr-1">👋</span>
             <span className="font-libre">Welcome back, </span>
             <span className="font-semibold">{userName}</span>
           </h1>
         </div>
         {schoolName && (
-          <div className="dash-card rounded-xl px-4 py-2.5 flex items-center gap-2.5 shrink-0">
-            <div className="w-7 h-7 rounded-lg bg-gray-100 shrink-0" />
-            <span className="text-[13px] font-semibold text-black">{schoolName}</span>
+          <div className="dash-card dark:border-[#2D2D2D] dark:bg-[#333333] rounded-xl px-4 py-2.5 flex items-center gap-2.5 shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-[#2D2D2D] shrink-0" />
+            <span className="text-[13px] font-semibold text-[#2D2D2D] dark:text-white">{schoolName}</span>
           </div>
         )}
       </div>
@@ -296,7 +324,7 @@ export default async function StudentDashboard() {
               />
             </div>
             <div className="flex-[2] min-w-0">
-              <ExamsCard exams={myExams} teacherMap={teacherMap} studentId={user.id} />
+              <ExamsCard exams={myExams} teacherMap={teacherMap} studentId={user.id} doneExamIds={doneExamIds} />
             </div>
           </div>
 
@@ -313,15 +341,31 @@ export default async function StudentDashboard() {
             <ScheduleCard slots={slotsMap} initialDayOffset={0} />
           </div>
 
-          {/* Vacation countdown */}
-          <div className="dash-card rounded-2xl px-4 py-3 shrink-0">
-            <p className="text-[13px] font-semibold text-black">
-              <span className="mr-1">🌴</span>
-              {vacationDays !== null
-                ? `Next vacation in ${vacationDays} days`
-                : "No upcoming vacation"}
-            </p>
+          {/* Stats strip */}
+          <div className="grid grid-cols-2 gap-3 shrink-0">
+            <div className="dash-card dark:border-[#2D2D2D] dark:bg-[#333333] rounded-2xl px-3 py-3">
+              <p className="text-[20px] font-bold text-[#2D2D2D] dark:text-white leading-tight">
+                {statsRow?.current_streak ?? 0}
+                <span className="ml-1">🔥</span>
+              </p>
+              <p className="text-[10px] font-bold text-[#9A9A9A] dark:text-[#A0A0A0] mt-0.5">Day streak</p>
+            </div>
+            <div className="dash-card dark:border-[#2D2D2D] dark:bg-[#333333] rounded-2xl px-3 py-3">
+              <p className="text-[20px] font-bold text-[#2D2D2D] dark:text-white leading-tight">
+                {attendanceRate !== null ? `${attendanceRate}%` : "—"}
+              </p>
+              <p className="text-[10px] font-bold text-[#9A9A9A] dark:text-[#A0A0A0] mt-0.5">Attendance</p>
+            </div>
           </div>
+          {/* Vacation countdown */}
+          {vacationDays !== null && (
+            <div className="dash-card dark:border-[#2D2D2D] dark:bg-[#333333] rounded-2xl px-4 py-3 shrink-0">
+              <p className="text-[13px] font-semibold text-[#2D2D2D] dark:text-white">
+                <span className="mr-1">🌴</span>
+                {`Next vacation in ${vacationDays} days`}
+              </p>
+            </div>
+          )}
 
           {/* Announcements */}
           <div className="flex-1 min-h-0">

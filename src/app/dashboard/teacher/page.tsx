@@ -1,9 +1,13 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { BookOpen, CheckSquare, Brain, Inbox, Plus, Clock, Users, GraduationCap, Megaphone } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
+import {
+  TeacherAssignmentsCard,
+  TeacherSubmissionsCard,
+  TeacherScheduleCard,
+  TeacherStatsRow,
+  TeacherAnnouncementsCard,
+  TeacherQuickActions,
+} from "./teacher-dashboard-client";
 
 export default async function TeacherDashboard() {
   const supabase = await createServerSupabaseClient();
@@ -12,185 +16,268 @@ export default async function TeacherDashboard() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("school_id, subject_id")
+    .select("school_id, subject_id, full_name")
     .eq("id", user.id)
     .single();
 
   const schoolId = profile?.school_id;
 
-  let subjectName = "";
-  if (profile?.subject_id) {
-    const { data: sub } = await supabase
-      .from("subjects")
+  // Fetch school name
+  let schoolName = "";
+  if (schoolId) {
+    const { data: school } = await supabase
+      .from("schools")
       .select("name")
-      .eq("id", profile.subject_id)
+      .eq("id", schoolId)
       .single();
-    subjectName = sub?.name || "";
+    schoolName = school?.name || "";
   }
 
-  const { data: assignments } = schoolId
-    ? await supabase
-        .from("assignments")
-        .select("id, title, subject, class_name, due_date, status, created_at")
-        .eq("created_by", user.id)
-        .order("created_at", { ascending: false })
-        .limit(5)
-    : { data: [] };
+  // Fetch all assignments by this teacher
+  const { data: allAssignments } = await supabase
+    .from("assignments")
+    .select("id, title, subject, class_name, due_date, status, created_at")
+    .eq("created_by", user.id)
+    .order("created_at", { ascending: false })
+    .limit(20);
 
-  const recentAssignments = assignments || [];
+  const recentAssignments = allAssignments || [];
 
-  // Fetch school announcements
-  let announcements: { id: string; title: string; priority: string; created_at: string }[] = [];
+  // Fetch student completion data for these assignments
+  const dashboardAssignmentIds = recentAssignments.map((a) => a.id);
+  const studentStatusMap: Record<string, { total: number; completed: number }> = {};
+  if (dashboardAssignmentIds.length > 0) {
+    const { data: links } = await supabase
+      .from("assignment_students")
+      .select("assignment_id, completed_at")
+      .in("assignment_id", dashboardAssignmentIds);
+
+    if (links) {
+      links.forEach((l) => {
+        if (!studentStatusMap[l.assignment_id]) {
+          studentStatusMap[l.assignment_id] = { total: 0, completed: 0 };
+        }
+        studentStatusMap[l.assignment_id].total++;
+        if (l.completed_at) studentStatusMap[l.assignment_id].completed++;
+      });
+    }
+  }
+
+  const dashboardAssignments = recentAssignments.map((a) => ({
+    ...a,
+    totalStudents: studentStatusMap[a.id]?.total || 0,
+    completedStudents: studentStatusMap[a.id]?.completed || 0,
+  }));
+
+  // Fetch submissions for this teacher's assignments
+  const assignmentIds = recentAssignments.map((a) => a.id);
+  let submissionRows: { id: string; studentId: string; studentName: string; assignmentTitle: string; subject: string; status: string; grade: number | null; submittedAt: string }[] = [];
+  let pendingSubmissionCount = 0;
+  let avgGrade: number | null = null;
+
+  if (assignmentIds.length > 0) {
+    const { data: subs } = await supabase
+      .from("submissions")
+      .select("id, student_id, assignment_id, status, grade, submitted_at")
+      .in("assignment_id", assignmentIds)
+      .order("submitted_at", { ascending: false })
+      .limit(10);
+
+    const submissions = subs || [];
+    pendingSubmissionCount = submissions.filter((s) => s.status === "submitted").length;
+    const gradedSubs = submissions.filter((s) => s.status === "graded" && s.grade != null);
+    avgGrade = gradedSubs.length > 0
+      ? Math.round(gradedSubs.reduce((sum, s) => sum + (s.grade || 0), 0) / gradedSubs.length)
+      : null;
+
+    // Get student names
+    const studentIds = [...new Set(submissions.map((s) => s.student_id))];
+    let studentMap: Record<string, string> = {};
+    if (studentIds.length > 0) {
+      const { data: students } = await supabase.from("profiles").select("id, full_name").in("id", studentIds);
+      (students || []).forEach((s) => { studentMap[s.id] = s.full_name; });
+    }
+
+    const assignmentMap: Record<string, { title: string; subject: string }> = {};
+    recentAssignments.forEach((a) => { assignmentMap[a.id] = { title: a.title, subject: a.subject }; });
+
+    submissionRows = submissions.map((s) => ({
+      id: s.id,
+      studentId: s.student_id,
+      studentName: studentMap[s.student_id] || "Unknown",
+      assignmentTitle: assignmentMap[s.assignment_id]?.title || "Assignment",
+      subject: assignmentMap[s.assignment_id]?.subject || "",
+      status: s.status,
+      grade: s.grade,
+      submittedAt: s.submitted_at,
+    }));
+  }
+
+  // Count total students taught (via class_subjects → student_enrollments)
+  let totalStudents = 0;
   if (schoolId) {
-    const { data: ann } = await supabase
+    const { data: cs } = await supabase
+      .from("class_subjects")
+      .select("class_id")
+      .eq("teacher_id", user.id);
+    const classIds = [...new Set((cs || []).map((c) => c.class_id))];
+    if (classIds.length > 0) {
+      const { count } = await supabase
+        .from("student_enrollments")
+        .select("id", { count: "exact", head: true })
+        .in("class_id", classIds);
+      totalStudents = count || 0;
+    }
+  }
+
+  // Fetch teacher's timetable (via class_subjects where teacher_id = user.id)
+  let slotsMap: Record<number, { id: string; start_time: string; end_time: string; room: string | null; subject_name?: string; class_name?: string }[]> = {};
+  if (schoolId) {
+    const { data: teacherCS } = await supabase
+      .from("class_subjects")
+      .select("id, subject_id, class_id")
+      .eq("teacher_id", user.id);
+
+    if (teacherCS && teacherCS.length > 0) {
+      const csIds = teacherCS.map((cs) => cs.id);
+      const { data: slots } = await supabase
+        .from("timetable_slots")
+        .select("id, start_time, end_time, room, class_subject_id, day_of_week")
+        .eq("school_id", schoolId)
+        .in("class_subject_id", csIds)
+        .order("start_time", { ascending: true });
+
+      // Get subject names
+      const subjectIds = [...new Set(teacherCS.map((cs) => cs.subject_id))];
+      let subjectMap: Record<string, string> = {};
+      if (subjectIds.length > 0) {
+        const { data: subjects } = await supabase.from("subjects").select("id, name").in("id", subjectIds);
+        (subjects || []).forEach((s) => { subjectMap[s.id] = s.name; });
+      }
+
+      // Get class names
+      const classIds = [...new Set(teacherCS.map((cs) => cs.class_id))];
+      let classMap: Record<string, string> = {};
+      if (classIds.length > 0) {
+        const { data: classes } = await supabase.from("classes").select("id, name").in("id", classIds);
+        (classes || []).forEach((c) => { classMap[c.id] = c.name; });
+      }
+
+      const csMap: Record<string, { subject: string; className: string }> = {};
+      teacherCS.forEach((cs) => {
+        csMap[cs.id] = {
+          subject: subjectMap[cs.subject_id] || "Subject",
+          className: classMap[cs.class_id] || "",
+        };
+      });
+
+      (slots || []).forEach((s) => {
+        const dow = s.day_of_week;
+        if (!slotsMap[dow]) slotsMap[dow] = [];
+        slotsMap[dow].push({
+          id: s.id,
+          start_time: s.start_time,
+          end_time: s.end_time,
+          room: s.room,
+          subject_name: csMap[s.class_subject_id]?.subject,
+          class_name: csMap[s.class_subject_id]?.className,
+        });
+      });
+    }
+  }
+
+  // Fetch announcements
+  let announcements: { id: string; title: string; content: string; priority: string; created_at: string; created_by: string }[] = [];
+  if (schoolId) {
+    const { data } = await supabase
       .from("announcements")
-      .select("id, title, priority, created_at")
+      .select("id, title, content, priority, created_at, created_by")
       .eq("school_id", schoolId)
       .order("created_at", { ascending: false })
       .limit(3);
-    announcements = ann || [];
+    announcements = data || [];
   }
 
+  // Get announcement author names
+  const announcementAuthorIds = [...new Set(announcements.map((a) => a.created_by).filter(Boolean))];
+  let authorMap: Record<string, string> = {};
+  if (announcementAuthorIds.length > 0) {
+    const { data: authors } = await supabase.from("profiles").select("id, full_name").in("id", announcementAuthorIds);
+    (authors || []).forEach((a) => { authorMap[a.id] = a.full_name || "Admin"; });
+  }
+
+  const announcementsWithAuthors = announcements.map((a) => ({
+    ...a,
+    author_name: authorMap[a.created_by] || undefined,
+  }));
+
+  const userName = profile?.full_name?.split(" ")[0] || user.user_metadata?.full_name?.split(" ")[0] || "there";
+
   const today = new Date();
-  const hours = today.getHours();
-  const greeting = hours < 12 ? "Good morning" : hours < 18 ? "Good afternoon" : "Good evening";
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
+    <div className="h-full flex flex-col gap-3">
+      {/* ─── TOP BAR ─── */}
+      <div className="flex items-start justify-between shrink-0" style={{ paddingTop: 23 }}>
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">{greeting}!</h1>
-          <p className="mt-1 text-gray-500">
-            {subjectName ? `${subjectName} Department` : "Here's your teaching dashboard"}
+          <p className="text-[12px] text-[#9A9A9A] dark:text-[#A0A0A0]">
+            {dayNames[today.getDay()]}, {today.getDate()} {monthNames[today.getMonth()]}
           </p>
+          <h1 className="text-[22px] leading-tight mt-0.5 text-[#2d2d2d] dark:text-white" style={{ marginTop: 0 }}>
+            <span className="mr-1">👋</span>
+            <span className="font-libre">Welcome back, </span>
+            <span className="font-semibold">{userName}</span>
+          </h1>
         </div>
-        <div className="flex gap-3">
-          <Link href="/dashboard/teacher/create-exam">
-            <Button variant="outline" className="rounded-xl h-12 px-5 text-base font-semibold border-blue-200 text-[#1e3a5f] hover:bg-blue-50">
-              <GraduationCap className="mr-2 h-5 w-5" /> Schedule Exam
-            </Button>
-          </Link>
-          <Link href="/dashboard/teacher/create">
-            <Button className="bg-[#1e3a5f] hover:bg-[#162d4a] rounded-xl h-12 px-6 text-base font-semibold shadow-lg shadow-blue-100">
-              <Plus className="mr-2 h-5 w-5" /> Create Assignment
-            </Button>
-          </Link>
-        </div>
+        {schoolName && (
+          <div className="dash-card dark:border-[#2D2D2D] dark:bg-[#333333] rounded-xl px-4 py-2.5 flex items-center gap-2.5 shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-[#2D2D2D] shrink-0" />
+            <span className="text-[13px] font-semibold text-[#2D2D2D] dark:text-white">{schoolName}</span>
+          </div>
+        )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Recent Assignments */}
-        <div className="lg:col-span-2">
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg font-bold">Recent Assignments</CardTitle>
-              <Link href="/dashboard/teacher/assignments" className="text-sm font-medium text-[#1e3a5f] hover:text-[#1e3a5f]">
-                View all →
-              </Link>
-            </CardHeader>
-            <CardContent>
-              {recentAssignments.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-50">
-                    <Inbox className="h-7 w-7 text-gray-300" />
-                  </div>
-                  <p className="mt-3 text-sm font-medium text-gray-400">No assignments created yet</p>
-                  <p className="mt-1 text-xs text-gray-300">Click the button above to create your first assignment</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {recentAssignments.map((a) => (
-                    <div key={a.id} className="flex items-center justify-between rounded-xl border border-gray-100 p-4 hover:bg-gray-50 transition-colors">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 shrink-0">
-                          <BookOpen className="h-5 w-5 text-[#1e3a5f]" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 truncate">{a.title}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-xs text-gray-400">{a.class_name || a.subject}</span>
-                            <span className="text-xs text-gray-300">•</span>
-                            <span className="text-xs text-gray-400 flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              Due {new Date(a.due_date).toLocaleDateString()}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                        a.status === "active"
-                          ? "bg-blue-50 text-[#1e3a5f]"
-                          : "bg-gray-100 text-gray-500"
-                      }`}>
-                        {a.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+      {/* ─── STATS + QUICK ACTIONS ─── */}
+      <TeacherStatsRow
+        totalStudents={totalStudents}
+        totalAssignments={recentAssignments.length}
+        pendingSubmissions={pendingSubmissionCount}
+        avgGrade={avgGrade}
+      />
+
+      {/* ─── MAIN GRID ─── */}
+      <div className="flex flex-col lg:flex-row gap-3 flex-1 min-h-0">
+        {/* LEFT COLUMN */}
+        <div className="flex-1 min-w-0 flex flex-col gap-3">
+          {/* Assignments + Submissions row */}
+          <div className="flex flex-col sm:flex-row gap-3 flex-[2] min-h-0">
+            <div className="flex-[3] min-w-0">
+              <TeacherAssignmentsCard assignments={dashboardAssignments} />
+            </div>
+            <div className="flex-[2] min-w-0">
+              <TeacherSubmissionsCard submissions={submissionRows} />
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="shrink-0">
+            <TeacherQuickActions />
+          </div>
         </div>
 
-        {/* Quick Actions + Announcements */}
-        <div className="space-y-6">
-          <Card className="border-0 shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-base font-bold">Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {[
-                { label: "Create Assignment", href: "/dashboard/teacher/create", icon: BookOpen, color: "bg-blue-50 text-[#1e3a5f] border-blue-200" },
-                { label: "Schedule Exam", href: "/dashboard/teacher/create-exam", icon: GraduationCap, color: "bg-blue-50 text-[#1e3a5f] border-blue-200" },
-                { label: "AI Homework Digitizer", href: "/dashboard/teacher/ai-digitizer", icon: Brain, color: "bg-blue-50 text-[#1e3a5f] border-blue-200" },
-                { label: "Grade Submissions", href: "/dashboard/teacher/submissions", icon: CheckSquare, color: "bg-blue-50 text-[#1e3a5f] border-blue-200" },
-              ].map((action) => (
-                <Link key={action.href} href={action.href}>
-                  <div className={`flex items-center gap-3 rounded-xl border p-3.5 transition-colors hover:shadow-sm cursor-pointer ${action.color}`}>
-                    <action.icon className="h-5 w-5" />
-                    <span className="text-sm font-semibold">{action.label}</span>
-                  </div>
-                </Link>
-              ))}
-            </CardContent>
-          </Card>
+        {/* RIGHT COLUMN */}
+        <div className="w-full lg:w-[260px] shrink-0 flex flex-col gap-3">
+          {/* Schedule */}
+          <div className="flex-[2] min-h-0">
+            <TeacherScheduleCard slots={slotsMap} />
+          </div>
 
-          <Card className="border-0 shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base font-bold">
-                <Megaphone className="h-4 w-4 text-[#1e3a5f]" />
-                Announcements
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {announcements.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-6 text-center">
-                  <Megaphone className="h-6 w-6 text-gray-200 mb-1" />
-                  <p className="text-xs text-gray-400">No announcements</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {announcements.map((a) => (
-                    <div key={a.id} className="rounded-lg border border-gray-100 px-3 py-2.5">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{a.title}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-xs text-gray-400">
-                          {new Date(a.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                        </span>
-                        {a.priority !== "normal" && (
-                          <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                            a.priority === "urgent" ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600"
-                          }`}>
-                            {a.priority}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {/* Announcements */}
+          <div className="flex-1 min-h-0">
+            <TeacherAnnouncementsCard announcements={announcementsWithAuthors} />
+          </div>
         </div>
       </div>
     </div>

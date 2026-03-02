@@ -55,6 +55,7 @@ export default async function TeacherSubmissions() {
   // Prepare data for client component
   const submissionRows = submissions.map((s) => ({
     id: s.id,
+    studentId: s.student_id,
     studentName: studentMap[s.student_id] || "Unknown",
     assignmentTitle: assignmentMap[s.assignment_id]?.title || "Assignment",
     subject: assignmentMap[s.assignment_id]?.subject || "",

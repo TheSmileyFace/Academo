@@ -93,7 +93,8 @@ export default async function AdminUsers() {
         <Card className="border-0 shadow-sm overflow-hidden">
           <div className="divide-y divide-gray-100">
             {allUsers.map((u) => (
-              <div key={u.id} className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
+              <div key={u.id} className="rounded-xl mx-2 overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
                 <div className="flex items-center gap-4">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-sm font-bold text-gray-600">
                     {(u.full_name || "?").charAt(0).toUpperCase()}
@@ -119,6 +120,7 @@ export default async function AdminUsers() {
                   <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${roleBadge[u.role] || "bg-gray-50 text-gray-600 border-gray-200"}`}>
                     {u.role}
                   </span>
+                </div>
                 </div>
               </div>
             ))}

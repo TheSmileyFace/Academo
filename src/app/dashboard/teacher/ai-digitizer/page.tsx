@@ -28,36 +28,57 @@ export default function AIDigitizer() {
   };
 
   const processImage = async () => {
+    if (!imagePreview) return;
     setProcessing(true);
-    // Simulate OCR + AI processing since image-to-text requires a vision model
-    // In production, you would use a vision API first, then pass text to mistral-nemo
-    setTimeout(async () => {
-      const simulatedOCR = "1. Solve for x: 2x + 5 = 13\n2. Simplify: (3x^2 + 2x) - (x^2 - 4x)\n3. Factor: x^2 - 9\n4. Find the slope of the line passing through (2,3) and (5,9)\n5. Graph y = 2x - 1 and identify the y-intercept";
-      setExtractedText(simulatedOCR);
-      
-      try {
-        const res = await fetch("/api/ai", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: [{ role: "user", content: `Convert the following handwritten/printed homework into a well-formatted digital assignment with clear instructions, point values, and formatting:\n\n${simulatedOCR}` }],
-            system: "You are a teacher's assistant that converts raw homework text into professional, well-formatted digital assignments. Add clear instructions, point values for each question, and organize the content professionally. Use markdown formatting.",
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setConvertedAssignment(data.content);
-          toast.success("Homework digitized successfully!");
-        } else {
-          setConvertedAssignment(`# Mathematics Worksheet\n\n**Instructions:** Solve each problem showing all work. Each question is worth 20 points.\n\n**1.** (20 pts) Solve for x: 2x + 5 = 13\n\n**2.** (20 pts) Simplify: (3x² + 2x) - (x² - 4x)\n\n**3.** (20 pts) Factor completely: x² - 9\n\n**4.** (20 pts) Find the slope of the line passing through points (2,3) and (5,9)\n\n**5.** (20 pts) Graph y = 2x - 1 and identify the y-intercept\n\n**Total: 100 points**`);
-          toast.success("Homework digitized (using fallback formatting)!");
-        }
-      } catch {
-        setConvertedAssignment(`# Mathematics Worksheet\n\n**Instructions:** Solve each problem showing all work. Each question is worth 20 points.\n\n**1.** (20 pts) Solve for x: 2x + 5 = 13\n\n**2.** (20 pts) Simplify: (3x² + 2x) - (x² - 4x)\n\n**3.** (20 pts) Factor completely: x² - 9\n\n**4.** (20 pts) Find the slope of the line passing through points (2,3) and (5,9)\n\n**5.** (20 pts) Graph y = 2x - 1 and identify the y-intercept\n\n**Total: 100 points**`);
-        toast.success("Homework digitized (using fallback formatting)!");
+
+    try {
+      // Step 1: Use GPT-4o vision to extract text from the image
+      const visionRes = await fetch("/api/ai-vision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image_base64: imagePreview,
+          prompt: "Extract all text from this image of a handwritten or printed homework/exam. Return the raw extracted text faithfully, preserving numbering and structure. Do not add any commentary.",
+        }),
+      });
+
+      let ocrText = "";
+      if (visionRes.ok) {
+        const visionData = await visionRes.json();
+        ocrText = visionData.content || "";
       }
-      setProcessing(false);
-    }, 1500);
+
+      if (!ocrText) {
+        toast.error("Could not extract text from image. Check your API key.");
+        setProcessing(false);
+        return;
+      }
+
+      setExtractedText(ocrText);
+
+      // Step 2: Convert extracted text to formatted assignment
+      const res = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: `Convert the following handwritten/printed homework into a well-formatted digital assignment with clear instructions, point values, and formatting:\n\n${ocrText}` }],
+          system: "You are a teacher's assistant that converts raw homework text into professional, well-formatted digital assignments. Add clear instructions, point values for each question, and organize the content professionally. Use markdown formatting.",
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setConvertedAssignment(data.content);
+        toast.success("Homework digitized successfully!");
+      } else {
+        // Fallback: just display the extracted text cleanly
+        setConvertedAssignment(ocrText);
+        toast.success("Text extracted! AI formatting unavailable.");
+      }
+    } catch {
+      toast.error("Could not connect to AI service");
+    }
+    setProcessing(false);
   };
 
   const convertText = async () => {

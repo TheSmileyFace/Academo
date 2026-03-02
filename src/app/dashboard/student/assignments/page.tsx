@@ -6,14 +6,13 @@ import {
   Inbox,
   ChevronUp,
   ChevronDown,
-  CheckCircle2,
-  Circle,
-  Clock,
-  CalendarDays,
+  Check,
   ArrowUpDown,
   X,
-  BookOpen,
   Loader2,
+  List,
+  LayoutGrid,
+  AlertCircle,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -27,6 +26,7 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import Link from "next/link";
 import Image from "next/image";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface Task {
   id: string;
@@ -41,11 +41,11 @@ interface Task {
 function FilterSection({ title, open, onToggle, children }: { title: string; open: boolean; onToggle: () => void; children: React.ReactNode }) {
   return (
     <div>
-      <button onClick={onToggle} className="flex w-full items-center justify-between px-4 py-2.5 text-[13px] font-semibold text-black hover:bg-gray-50/50 transition-colors">
+      <button onClick={onToggle} className="flex w-full items-center justify-between px-4 py-2.5 text-[13px] font-semibold text-[#2D2D2D] hover:bg-gray-50/50 transition-colors">
         {title}
         {open ? <ChevronUp className="h-3.5 w-3.5 text-[#9A9A9A]" /> : <ChevronDown className="h-3.5 w-3.5 text-[#9A9A9A]" />}
       </button>
-      <div className="h-px bg-black/10" />
+      <div className="h-px bg-[#2D2D2D]/10" />
       {open && <div className="px-4 pb-3 pt-1 space-y-0.5">{children}</div>}
     </div>
   );
@@ -55,7 +55,7 @@ function RadioOption({ label, selected, onClick, count }: { label: string; selec
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-[13px] transition-colors ${selected ? "bg-[#2D2D2D]/5 text-black font-semibold" : "text-[#9A9A9A] hover:bg-gray-50"}`}
+      className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-[13px] transition-colors ${selected ? "bg-[#2D2D2D]/5 text-[#2D2D2D] font-semibold" : "text-[#9A9A9A] hover:bg-gray-50"}`}
     >
       <div className="flex items-center gap-2.5">
         <div className={`h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center ${selected ? "border-[#2D2D2D]" : "border-gray-300"}`}>
@@ -63,19 +63,24 @@ function RadioOption({ label, selected, onClick, count }: { label: string; selec
         </div>
         {label}
       </div>
-      {count !== undefined && <span className={`text-[11px] font-bold ${selected ? "text-black" : "text-[#9A9A9A]"}`}>{count}</span>}
+      {count !== undefined && <span className={`text-[11px] font-bold ${selected ? "text-[#2D2D2D]" : "text-[#9A9A9A]"}`}>{count}</span>}
     </button>
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { label: string; className: string }> = {
-    todo: { label: "To Do", className: "bg-[#2D2D2D]/5 text-black" },
-    done: { label: "Done", className: "bg-[#2D2D2D] text-white" },
-    overdue: { label: "Overdue", className: "bg-red-100 text-red-700" },
-  };
-  const c = config[status] ?? config.todo;
-  return <span className={`${c.className} text-[10px] font-bold px-2.5 py-1 rounded-lg inline-block`}>{c.label}</span>;
+function DoneButton({ done, overdue, onClick }: { done: boolean; overdue: boolean; onClick?: () => void }) {
+  let bg = "#2D2D2D";
+  if (done) bg = "linear-gradient(to top, #12E43C, #2D2D2D)";
+  else if (overdue) bg = "linear-gradient(to top, #B10707, #2D2D2D)";
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center justify-center shrink-0 transition-all active:scale-95"
+      style={{ width: 72, height: 32, borderRadius: 49, background: bg }}
+    >
+      <Check className="h-4 w-4 text-white" strokeWidth={3} />
+    </button>
+  );
 }
 
 export default function StudentAssignments() {
@@ -89,6 +94,7 @@ export default function StudentAssignments() {
   const [teacherFilter, setTeacherFilter] = useState<string>("all");
   const [openSections, setOpenSections] = useState({ progress: true, dueDate: true, setBy: true });
   const [doneTasks, setDoneTasks] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<"list" | "grouped">("list");
 
   const toggleSection = (key: keyof typeof openSections) => {
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -150,21 +156,50 @@ export default function StudentAssignments() {
     if (!user) return;
 
     if (wasDone) {
-      await supabase
+      const { error } = await supabase
         .from("assignment_students")
         .update({ completed_at: null })
         .eq("assignment_id", id)
         .eq("student_id", user.id);
+      if (error) { toast.error("Failed to update"); return; }
       setDoneTasks((prev) => { const n = new Set(prev); n.delete(id); return n; });
       toast.success("Unmarked");
     } else {
-      await supabase
+      const { error } = await supabase
         .from("assignment_students")
         .update({ completed_at: new Date().toISOString() })
         .eq("assignment_id", id)
         .eq("student_id", user.id);
+      if (error) { toast.error("Failed to update"); return; }
       setDoneTasks((prev) => new Set([...prev, id]));
       toast.success("Marked as done!");
+
+      // Notify the teacher that this student marked the task as done
+      const task = tasks.find((t) => t.id === id);
+      if (task) {
+        const { data: assignment } = await supabase
+          .from("assignments")
+          .select("created_by")
+          .eq("id", id)
+          .single();
+
+        if (assignment?.created_by) {
+          const { data: studentProfile } = await supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("id", user.id)
+            .single();
+
+          const studentName = studentProfile?.full_name || "A student";
+          await supabase.from("notifications").insert({
+            user_id: assignment.created_by,
+            type: "task_completed",
+            title: `${studentName} completed "${task.title}"`,
+            body: `${studentName} marked "${task.title}" as done.`,
+            reference_id: id,
+          });
+        }
+      }
     }
   };
 
@@ -204,6 +239,15 @@ export default function StudentAssignments() {
   const allTeachers = [...new Set(tasks.map((t) => t.teacherName))].sort();
   const todoCnt = tasks.filter((t) => !doneTasks.has(t.id)).length;
   const doneCnt = tasks.length - todoCnt;
+  const overdueCnt = tasks.filter((t) => !doneTasks.has(t.id) && new Date(t.dueDate) < now).length;
+
+  // Group tasks by subject for grouped view
+  const groupedBySubject = sortedTasks.reduce<Record<string, typeof sortedTasks>>((acc, task) => {
+    const key = task.subject || "General";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(task);
+    return acc;
+  }, {});
 
   if (loading) {
     return (
@@ -215,9 +259,17 @@ export default function StudentAssignments() {
 
   return (
     <div className="h-full flex flex-col gap-4">
-      <div className="shrink-0 pt-2">
-        <h1 className="text-[22px] font-bold text-black">Tasks</h1>
-        <p className="text-[12px] text-[#9A9A9A] mt-0.5">All your assignments and homework</p>
+      <div className="shrink-0 pt-2 flex items-end justify-between">
+        <div>
+          <h1 className="text-[22px] font-bold text-[#2D2D2D]">Tasks</h1>
+          <p className="text-[12px] text-[#9A9A9A] mt-0.5">All your assignments and homework</p>
+        </div>
+        {overdueCnt > 0 && (
+          <div className="flex items-center gap-1.5 bg-red-100 text-red-700 rounded-lg px-3 py-1.5 mb-0.5">
+            <AlertCircle className="h-3.5 w-3.5" />
+            <span className="text-[11px] font-bold">{overdueCnt} overdue</span>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-4 flex-1 min-h-0">
@@ -227,12 +279,12 @@ export default function StudentAssignments() {
             <div className="flex items-center justify-between px-4 pt-3 pb-2">
               <span className="text-[10px] font-bold uppercase tracking-wider text-[#9A9A9A]">Filters</span>
               {hasActiveFilters && (
-                <button onClick={clearFilters} className="flex items-center gap-1 text-[10px] text-black font-semibold hover:opacity-70">
+                <button onClick={clearFilters} className="flex items-center gap-1 text-[10px] text-[#2D2D2D] font-semibold hover:opacity-70">
                   <X className="h-3 w-3" /> Clear
                 </button>
               )}
             </div>
-            <div className="h-px bg-black/10" />
+            <div className="h-px bg-[#2D2D2D]/10" />
 
             <FilterSection title="Progress" open={openSections.progress} onToggle={() => toggleSection("progress")}>
               <RadioOption label="All" selected={progressFilter === "all"} onClick={() => setProgressFilter("all")} count={tasks.length} />
@@ -264,12 +316,26 @@ export default function StudentAssignments() {
           <div className="flex items-center justify-between">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#9A9A9A]" />
-              <Input placeholder="Search tasks..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 rounded-xl border-black/10 bg-white h-9 text-[13px]" />
+              <Input placeholder="Search tasks..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 rounded-xl border-[#2D2D2D]/10 bg-white h-9 text-[13px]" />
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-bold text-[#9A9A9A]">{sortedTasks.length} task{sortedTasks.length !== 1 ? "s" : ""}</span>
+              <div className="flex items-center rounded-lg border border-[#2D2D2D]/10 overflow-hidden">
+                <button
+                  onClick={() => setViewMode("list")}
+                  className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-[#2D2D2D] text-white" : "text-[#9A9A9A] hover:bg-gray-50"}`}
+                >
+                  <List className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setViewMode("grouped")}
+                  className={`p-1.5 transition-colors ${viewMode === "grouped" ? "bg-[#2D2D2D] text-white" : "text-[#9A9A9A] hover:bg-gray-50"}`}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                </button>
+              </div>
               <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="w-32 h-9 rounded-xl border-black/10 text-[13px]">
+                <SelectTrigger className="w-32 h-9 rounded-xl border-[#2D2D2D]/10 text-[13px]">
                   <div className="flex items-center gap-1.5">
                     <ArrowUpDown className="h-3 w-3 text-[#9A9A9A]" />
                     <SelectValue />
@@ -292,43 +358,88 @@ export default function StudentAssignments() {
               <p className="mt-3 text-[14px] font-semibold text-[#9A9A9A]">No tasks yet</p>
               <p className="mt-1 text-[11px] text-[#9A9A9A]/60">When your teachers assign work, it&apos;ll show up here</p>
             </div>
+          ) : viewMode === "grouped" ? (
+            <div className="space-y-3">
+              {Object.entries(groupedBySubject).map(([subject, subjectTasks]) => (
+                <div key={subject} className="dash-card rounded-2xl overflow-hidden">
+                  <div className="px-4 py-2.5 flex items-center justify-between">
+                    <span className="text-[13px] font-bold text-[#2D2D2D]">{subject}</span>
+                    <span className="text-[10px] font-bold text-[#9A9A9A]">{subjectTasks.length} task{subjectTasks.length !== 1 ? "s" : ""}</span>
+                  </div>
+                  <div className="h-px bg-[#2D2D2D]/10" />
+                  <AnimatePresence initial={false}>
+                    {subjectTasks.map((task, idx) => {
+                      const isDone = doneTasks.has(task.id);
+                      const due = new Date(task.dueDate);
+                      const isOverdue = !isDone && due < now;
+                      return (
+                        <motion.div
+                          key={task.id}
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 73 }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="rounded-xl mx-2 overflow-hidden"
+                        >
+                          <div className="flex items-center gap-3 px-4 transition-colors hover:bg-gray-50/50" style={{ height: 73 }}>
+                            <Link href={`/dashboard/student/assignments/${task.id}`} className="flex-1 min-w-0">
+                              <p className={`text-[16px] truncate ${isDone ? "text-[#9A9A9A] line-through" : "text-[#2D2D2D] font-semibold"}`}>
+                                {task.title}
+                              </p>
+                              <div className="flex items-center gap-2 text-[10px] font-bold text-[#9A9A9A] mt-0.5">
+                                <span className="flex items-center gap-0.5"><Image src="/Icons/grey/teacher:person.svg" alt="" width={10} height={10} />{task.teacherName}</span>
+                                <span className="flex items-center gap-0.5"><Image src="/Icons/grey/time.svg" alt="" width={10} height={10} />
+                                  {due.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                                </span>
+                              </div>
+                            </Link>
+                            <DoneButton done={isDone} overdue={isOverdue} onClick={() => toggleDone(task.id)} />
+                          </div>
+                          {idx < subjectTasks.length - 1 && <div className="h-px bg-[#2D2D2D]/10" />}
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="dash-card rounded-2xl overflow-hidden">
-              {sortedTasks.map((task, idx) => {
-                const isDone = doneTasks.has(task.id);
-                const due = new Date(task.dueDate);
-                const isOverdue = !isDone && due < now;
+              <AnimatePresence initial={false}>
+                {sortedTasks.map((task, idx) => {
+                  const isDone = doneTasks.has(task.id);
+                  const due = new Date(task.dueDate);
+                  const isOverdue = !isDone && due < now;
 
-                return (
-                  <div key={task.id}>
-                    <div className="flex items-center gap-3 px-4 transition-colors hover:bg-gray-50/50" style={{ height: 73 }}>
-                      <button onClick={() => toggleDone(task.id)} className="shrink-0">
-                        {isDone ? (
-                          <CheckCircle2 className="h-5 w-5 text-[#2D2D2D]" />
-                        ) : (
-                          <Circle className="h-5 w-5 text-[#9A9A9A]/40 hover:text-[#2D2D2D] transition-colors" />
-                        )}
-                      </button>
-
-                      <Link href={`/dashboard/student/assignments/${task.id}`} className="flex-1 min-w-0">
-                        <p className={`text-[16px] truncate ${isDone ? "text-[#9A9A9A] line-through" : "text-black font-semibold"}`}>
-                          {task.title}
-                        </p>
-                        <div className="flex items-center gap-2 text-[10px] font-bold text-[#9A9A9A] mt-0.5">
-                          <span className="flex items-center gap-0.5"><Image src="/Icons/grey/subject.svg" alt="" width={10} height={10} />{task.subject}</span>
-                          <span className="flex items-center gap-0.5"><Image src="/Icons/grey/teacher:person.svg" alt="" width={10} height={10} />{task.teacherName}</span>
-                          <span className="flex items-center gap-0.5"><Image src="/Icons/grey/time.svg" alt="" width={10} height={10} />
-                            {due.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
-                          </span>
-                        </div>
-                      </Link>
-
-                      <StatusBadge status={isDone ? "done" : isOverdue ? "overdue" : "todo"} />
-                    </div>
-                    {idx < sortedTasks.length - 1 && <div className="h-px bg-black/10" />}
-                  </div>
-                );
-              })}
+                  return (
+                    <motion.div
+                      key={task.id}
+                      layout
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.2 }}
+                      className="rounded-xl mx-2 overflow-hidden"
+                    >
+                      <div className="flex items-center gap-3 px-4 transition-colors hover:bg-gray-50/50" style={{ height: 73 }}>
+                        <Link href={`/dashboard/student/assignments/${task.id}`} className="flex-1 min-w-0">
+                          <p className={`text-[16px] truncate ${isDone ? "text-[#9A9A9A] line-through" : "text-[#2D2D2D] font-semibold"}`}>
+                            {task.title}
+                          </p>
+                          <div className="flex items-center gap-2 text-[10px] font-bold text-[#9A9A9A] mt-0.5">
+                            <span className="flex items-center gap-0.5"><Image src="/Icons/grey/subject.svg" alt="" width={10} height={10} />{task.subject}</span>
+                            <span className="flex items-center gap-0.5"><Image src="/Icons/grey/teacher:person.svg" alt="" width={10} height={10} />{task.teacherName}</span>
+                            <span className="flex items-center gap-0.5"><Image src="/Icons/grey/time.svg" alt="" width={10} height={10} />
+                              {due.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                            </span>
+                          </div>
+                        </Link>
+                        <DoneButton done={isDone} overdue={isOverdue} onClick={() => toggleDone(task.id)} />
+                      </div>
+                      {idx < sortedTasks.length - 1 && <div className="h-px bg-[#2D2D2D]/10" />}
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
             </div>
           )}
         </div>

@@ -39,6 +39,8 @@ export default async function ParentAssignments() {
 
   const completedIds = assignmentLinks.filter((l) => l.completed_at).map((l) => l.assignment_id);
   const pendingIds = assignmentLinks.filter((l) => !l.completed_at).map((l) => l.assignment_id);
+  const completionTimeMap: Record<string, string> = {};
+  assignmentLinks.forEach((l) => { if (l.completed_at) completionTimeMap[l.assignment_id] = l.completed_at; });
 
   // Fetch all assignments
   const allIds = [...completedIds, ...pendingIds];
@@ -146,6 +148,11 @@ export default async function ParentAssignments() {
                       }`}>
                         {isDone ? "Done" : isOverdue ? "Overdue" : "Pending"}
                       </span>
+                      {isDone && completionTimeMap[a.id] && (
+                        <span className="text-[10px] text-gray-400 shrink-0">
+                          Completed {new Date(completionTimeMap[a.id]).toLocaleDateString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      )}
                     </div>
                   );
                 })}

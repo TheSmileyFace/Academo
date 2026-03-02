@@ -1,21 +1,5 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import {
-  GraduationCap,
-  Users,
-  BookOpen,
-  Layers,
-  FolderOpen,
-  KeyRound,
-  Plus,
-  ArrowRight,
-  Megaphone,
-  TrendingUp,
-  UserPlus,
-  Activity,
-} from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import {
   GrowthChart,
@@ -198,389 +182,187 @@ export default async function AdminDashboard() {
     .sort((a, b) => b.classes - a.classes)
     .slice(0, 8);
 
-  // Stat cards config
-  const stats = [
-    {
-      label: "Year Groups",
-      value: yearGroups.length,
-      icon: Layers,
-      color: "bg-blue-50 text-blue-600",
-      href: "/dashboard/admin/setup",
-    },
-    {
-      label: "Classes",
-      value: classes.length,
-      icon: FolderOpen,
-      color: "bg-cyan-50 text-cyan-600",
-      href: "/dashboard/admin/setup",
-    },
-    {
-      label: "Subjects",
-      value: subjects.length,
-      icon: BookOpen,
-      color: "bg-emerald-50 text-emerald-600",
-      href: "/dashboard/admin/setup",
-    },
-    {
-      label: "People",
-      value: allProfiles.length,
-      icon: Users,
-      color: "bg-violet-50 text-violet-600",
-      href: "/dashboard/admin/users",
-    },
-  ];
+  const today = new Date();
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const firstName = (profile?.full_name || "").split(" ")[0] || "Admin";
 
   return (
-    <div className="space-y-6">
+    <div className="h-full flex flex-col gap-3">
       {/* Header */}
-      <div className="flex items-end justify-between">
+      <div className="flex items-start justify-between shrink-0" style={{ paddingTop: 23 }}>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-            Dashboard
-          </h1>
-          <p className="mt-0.5 text-sm text-gray-500">
-            {school?.name || "Your school"} — overview and analytics
+          <p className="text-[12px] text-[#9A9A9A] dark:text-[#A0A0A0]">
+            {dayNames[today.getDay()]}, {today.getDate()} {monthNames[today.getMonth()]}
           </p>
+          <h1 className="text-[22px] leading-tight mt-0.5 text-[#2d2d2d] dark:text-white">
+            <span className="mr-1">👋</span>
+            <span className="font-libre">Welcome back, </span>
+            <span className="font-semibold">{firstName}</span>
+          </h1>
         </div>
-        <div className="flex gap-2">
-          <Link href="/dashboard/admin/invite-codes">
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs h-8 border-gray-200"
-            >
-              <UserPlus className="h-3.5 w-3.5 mr-1.5" />
-              Invite
-            </Button>
-          </Link>
-          <Link href="/dashboard/admin/announcements">
-            <Button
-              size="sm"
-              className="text-xs h-8 bg-[#1e3a5f] hover:bg-[#162d4a]"
-            >
-              <Megaphone className="h-3.5 w-3.5 mr-1.5" />
-              Announce
-            </Button>
-          </Link>
-        </div>
+        {school?.name && (
+          <div className="dash-card dark:border-[#2D2D2D] dark:bg-[#333333] rounded-xl px-4 py-2.5 flex items-center gap-2.5 shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-[#2D2D2D] shrink-0" />
+            <span className="text-[13px] font-semibold text-[#2D2D2D] dark:text-white">{school.name}</span>
+          </div>
+        )}
       </div>
 
-      {/* Quick Stats Row */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
-          <Link key={stat.label} href={stat.href}>
-            <Card className="border-0 shadow-sm hover:shadow-md transition-shadow cursor-pointer group">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      {stat.label}
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900 mt-1">
-                      {stat.value}
-                    </p>
-                  </div>
-                  <div
-                    className={`flex h-10 w-10 items-center justify-center rounded-xl ${stat.color} transition-transform group-hover:scale-110`}
-                  >
-                    <stat.icon className="h-5 w-5" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+      {/* Stats row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
+        {[
+          { label: "Year Groups", value: yearGroups.length, href: "/dashboard/admin/setup" },
+          { label: "Classes", value: classes.length, href: "/dashboard/admin/setup" },
+          { label: "Students", value: studentCount, href: "/dashboard/admin/users" },
+          { label: "Teachers", value: teacherCount, href: "/dashboard/admin/users" },
+        ].map((s) => (
+          <Link key={s.label} href={s.href}>
+            <div className="dash-card dark:border-[#2D2D2D] bg-white dark:bg-[#333333] rounded-2xl px-4 py-3 text-center hover:bg-[#2D2D2D]/[0.02] dark:hover:bg-white/[0.02] transition-colors cursor-pointer">
+              <p className="text-[22px] font-bold text-[#2D2D2D] dark:text-white leading-tight">{s.value}</p>
+              <p className="text-[11px] font-bold text-[#9A9A9A] dark:text-[#A0A0A0] mt-0.5">{s.label}</p>
+            </div>
           </Link>
         ))}
       </div>
 
-      {/* Charts Row 1: Growth + Role Distribution */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="border-0 shadow-sm lg:col-span-2">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50">
-                  <TrendingUp className="h-3.5 w-3.5 text-blue-600" />
-                </div>
-                <CardTitle className="text-sm font-semibold">
-                  User Growth
-                </CardTitle>
-              </div>
-              <span className="text-xs text-gray-400">Last 6 months</span>
+      {/* Quick actions */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
+        {[
+          { label: "Setup School", href: "/dashboard/admin/setup" },
+          { label: "Invite Users", href: "/dashboard/admin/invite-codes" },
+          { label: "Announce", href: "/dashboard/admin/announcements" },
+          { label: "Timetable", href: "/dashboard/admin/timetable" },
+        ].map((a) => (
+          <Link key={a.href} href={a.href}>
+            <div className="dash-card dark:border-[#2D2D2D] bg-white dark:bg-[#333333] rounded-2xl px-4 py-3 text-center hover:bg-[#2D2D2D]/[0.02] dark:hover:bg-white/[0.02] transition-colors cursor-pointer">
+              <p className="text-[13px] font-semibold text-[#2D2D2D] dark:text-white">{a.label}</p>
             </div>
-          </CardHeader>
-          <CardContent className="pt-0">
+          </Link>
+        ))}
+      </div>
+
+      {/* Charts + lists */}
+      <div className="flex flex-col lg:flex-row gap-3 flex-1 min-h-0">
+        {/* Left: charts */}
+        <div className="flex-1 min-w-0 flex flex-col gap-3 min-h-0">
+          {/* Growth chart */}
+          <div className="dash-card dark:border-[#2D2D2D] bg-white dark:bg-[#333333] rounded-2xl px-5 py-4 flex-[2] min-h-0">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[14px] font-semibold text-[#2D2D2D] dark:text-white">User Growth</p>
+              <span className="text-[11px] text-[#9A9A9A] dark:text-[#A0A0A0]">Last 6 months</span>
+            </div>
             <GrowthChart data={growthData} />
-          </CardContent>
-        </Card>
+          </div>
 
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50">
-                <Users className="h-3.5 w-3.5 text-violet-600" />
+          {/* Year group + subject charts */}
+          <div className="flex gap-3 flex-1 min-h-0">
+            <div className="dash-card dark:border-[#2D2D2D] bg-white dark:bg-[#333333] rounded-2xl px-5 py-4 flex-1 min-w-0 min-h-0">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[14px] font-semibold text-[#2D2D2D] dark:text-white">Students per Year Group</p>
+                <Link href="/dashboard/admin/setup" className="text-[11px] text-[#9A9A9A] hover:text-[#2D2D2D] dark:hover:text-white transition-colors">Setup →</Link>
               </div>
-              <CardTitle className="text-sm font-semibold">
-                User Roles
-              </CardTitle>
+              <YearGroupChart data={yearGroupData} />
             </div>
-          </CardHeader>
-          <CardContent className="pt-0">
+            <div className="dash-card dark:border-[#2D2D2D] bg-white dark:bg-[#333333] rounded-2xl px-5 py-4 flex-1 min-w-0 min-h-0">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[14px] font-semibold text-[#2D2D2D] dark:text-white">Classes per Subject</p>
+                <Link href="/dashboard/admin/setup" className="text-[11px] text-[#9A9A9A] hover:text-[#2D2D2D] dark:hover:text-white transition-colors">Setup →</Link>
+              </div>
+              <SubjectChart data={subjectData} />
+            </div>
+          </div>
+        </div>
+
+        {/* Right column */}
+        <div className="w-full lg:w-[260px] shrink-0 flex flex-col gap-3">
+          {/* Role donut */}
+          <div className="dash-card dark:border-[#2D2D2D] bg-white dark:bg-[#333333] rounded-2xl px-5 py-4 shrink-0">
+            <p className="text-[14px] font-semibold text-[#2D2D2D] dark:text-white mb-3">User Roles</p>
             <RoleDonutChart data={roleData} />
-          </CardContent>
-        </Card>
-      </div>
+          </div>
 
-      {/* Charts Row 2: Year Groups + Subjects */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-50">
-                  <GraduationCap className="h-3.5 w-3.5 text-cyan-600" />
+          {/* People mini stats */}
+          <div className="grid grid-cols-2 gap-3 shrink-0">
+            {[
+              { label: "Parents", value: parentCount },
+              { label: "Subjects", value: subjects.length },
+            ].map((s) => (
+              <div key={s.label} className="dash-card dark:border-[#2D2D2D] bg-white dark:bg-[#333333] rounded-2xl px-3 py-3 text-center">
+                <p className="text-[20px] font-bold text-[#2D2D2D] dark:text-white leading-tight">{s.value}</p>
+                <p className="text-[10px] font-bold text-[#9A9A9A] dark:text-[#A0A0A0] mt-0.5">{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Year groups list */}
+          <div className="dash-card dark:border-[#2D2D2D] bg-white dark:bg-[#333333] rounded-2xl overflow-hidden flex-1 flex flex-col min-h-0">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#2D2D2D]/5 dark:border-white/5 shrink-0">
+              <p className="text-[13px] font-semibold text-[#2D2D2D] dark:text-white">Year Groups</p>
+              <Link href="/dashboard/admin/setup" className="text-[11px] text-[#9A9A9A] hover:text-[#2D2D2D] dark:hover:text-white transition-colors">Manage →</Link>
+            </div>
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {yearGroups.length === 0 ? (
+                <div className="flex items-center justify-center py-8">
+                  <p className="text-[12px] text-[#9A9A9A]">No year groups yet</p>
                 </div>
-                <CardTitle className="text-sm font-semibold">
-                  Students per Year Group
-                </CardTitle>
-              </div>
-              <Link href="/dashboard/admin/setup">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs h-7 text-gray-400 hover:text-[#1e3a5f]"
-                >
-                  View all
-                  <ArrowRight className="h-3 w-3 ml-1" />
-                </Button>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <YearGroupChart data={yearGroupData} />
-          </CardContent>
-        </Card>
-
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50">
-                  <BookOpen className="h-3.5 w-3.5 text-emerald-600" />
-                </div>
-                <CardTitle className="text-sm font-semibold">
-                  Classes per Subject
-                </CardTitle>
-              </div>
-              <Link href="/dashboard/admin/setup">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs h-7 text-gray-400 hover:text-[#1e3a5f]"
-                >
-                  View all
-                  <ArrowRight className="h-3 w-3 ml-1" />
-                </Button>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <SubjectChart data={subjectData} />
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Bottom Row: Quick Links + Announcements */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        {/* Year Groups & Classes Summary */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold">
-                Year Groups
-              </CardTitle>
-              <Link href="/dashboard/admin/setup">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs h-7 text-gray-400 hover:text-[#1e3a5f]"
-                >
-                  Manage
-                  <ArrowRight className="h-3 w-3 ml-1" />
-                </Button>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {yearGroups.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Layers className="h-6 w-6 text-gray-200 mb-2" />
-                <p className="text-xs text-gray-400">No year groups yet</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {yearGroups.slice(0, 5).map((yg) => {
-                  const ygClasses = classes.filter(
-                    (c) => c.year_group_id === yg.id
-                  );
-                  return (
-                    <div
-                      key={yg.id}
-                      className="rounded-lg border border-gray-100 p-2.5"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-gray-900">
-                          {yg.name}
-                        </span>
-                        <span className="text-[10px] text-gray-400">
-                          {ygClasses.length}{" "}
-                          {ygClasses.length === 1 ? "class" : "classes"}
-                        </span>
-                      </div>
-                      {ygClasses.length > 0 && (
-                        <div className="mt-1.5 flex flex-wrap gap-1">
-                          {ygClasses.map((c) => (
-                            <span
-                              key={c.id}
-                              className="text-[10px] font-medium bg-blue-50 text-[#1e3a5f] rounded-full px-2 py-0.5"
-                            >
-                              {c.name}
-                            </span>
-                          ))}
+              ) : (
+                <div className="divide-y divide-black/[0.06] dark:divide-white/[0.06]">
+                  {yearGroups.slice(0, 6).map((yg) => {
+                    const ygClasses = classes.filter((c) => c.year_group_id === yg.id);
+                    return (
+                      <div key={yg.id} className="px-4 py-2.5">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[12px] font-semibold text-[#2D2D2D] dark:text-white">{yg.name}</p>
+                          <span className="text-[10px] text-[#9A9A9A]">{ygClasses.length} {ygClasses.length === 1 ? "class" : "classes"}</span>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {yearGroups.length > 5 && (
-                  <p className="text-[10px] text-gray-400 text-center pt-1">
-                    +{yearGroups.length - 5} more
-                  </p>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                        {ygClasses.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {ygClasses.slice(0, 4).map((c) => (
+                              <span key={c.id} className="text-[9px] font-bold bg-[#2D2D2D]/5 dark:bg-white/5 text-[#9A9A9A] dark:text-[#A0A0A0] px-1.5 py-0.5 rounded-full">
+                                {c.name}
+                              </span>
+                            ))}
+                            {ygClasses.length > 4 && (
+                              <span className="text-[9px] font-bold text-[#9A9A9A] dark:text-[#A0A0A0]">+{ygClasses.length - 4}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
 
-        {/* Invite Codes Summary */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold">
-                Invite Codes
-              </CardTitle>
-              <Link href="/dashboard/admin/invite-codes">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs h-7 text-gray-400 hover:text-[#1e3a5f]"
-                >
-                  Manage
-                  <ArrowRight className="h-3 w-3 ml-1" />
-                </Button>
-              </Link>
+          {/* Recent announcements */}
+          <div className="dash-card dark:border-[#2D2D2D] bg-white dark:bg-[#333333] rounded-2xl overflow-hidden shrink-0">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#2D2D2D]/5 dark:border-white/5">
+              <p className="text-[13px] font-semibold text-[#2D2D2D] dark:text-white">Announcements</p>
+              <Link href="/dashboard/admin/announcements" className="text-[11px] text-[#9A9A9A] hover:text-[#2D2D2D] dark:hover:text-white transition-colors">All →</Link>
             </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border border-gray-100 p-3 text-center">
-                <div className="flex h-8 w-8 mx-auto items-center justify-center rounded-lg bg-blue-50">
-                  <GraduationCap className="h-4 w-4 text-blue-600" />
-                </div>
-                <p className="mt-1.5 text-xl font-bold text-gray-900">
-                  {studentCodeCount}
-                </p>
-                <p className="text-[10px] text-gray-400">Class Codes</p>
-              </div>
-              <div className="rounded-lg border border-gray-100 p-3 text-center">
-                <div className="flex h-8 w-8 mx-auto items-center justify-center rounded-lg bg-amber-50">
-                  <KeyRound className="h-4 w-4 text-amber-600" />
-                </div>
-                <p className="mt-1.5 text-xl font-bold text-gray-900">
-                  {staffCodeCount}
-                </p>
-                <p className="text-[10px] text-gray-400">Staff Codes</p>
-              </div>
-            </div>
-            {/* Quick people stats */}
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <div className="rounded-lg border border-gray-100 p-3 text-center">
-                <p className="text-xl font-bold text-gray-900">
-                  {studentCount}
-                </p>
-                <p className="text-[10px] text-gray-400">Students</p>
-              </div>
-              <div className="rounded-lg border border-gray-100 p-3 text-center">
-                <p className="text-xl font-bold text-gray-900">
-                  {teacherCount}
-                </p>
-                <p className="text-[10px] text-gray-400">Teachers</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Recent Announcements */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-50">
-                  <Megaphone className="h-3.5 w-3.5 text-orange-600" />
-                </div>
-                <CardTitle className="text-sm font-semibold">
-                  Announcements
-                </CardTitle>
-              </div>
-              <Link href="/dashboard/admin/announcements">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs h-7 text-gray-400 hover:text-[#1e3a5f]"
-                >
-                  All
-                  <ArrowRight className="h-3 w-3 ml-1" />
-                </Button>
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
             {recentAnnouncements.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Megaphone className="h-6 w-6 text-gray-200 mb-2" />
-                <p className="text-xs text-gray-400">No announcements yet</p>
-                <Link
-                  href="/dashboard/admin/announcements"
-                  className="mt-1.5 text-[10px] font-medium text-[#1e3a5f] hover:underline"
-                >
-                  Create one →
-                </Link>
+              <div className="flex flex-col items-center justify-center py-6 text-center px-4">
+                <p className="text-[12px] text-[#9A9A9A]">No announcements yet</p>
+                <Link href="/dashboard/admin/announcements" className="mt-1 text-[11px] font-semibold text-[#2D2D2D] dark:text-white hover:underline">Create one →</Link>
               </div>
             ) : (
-              <div className="space-y-1.5">
+              <div className="divide-y divide-black/[0.06] dark:divide-white/[0.06]">
                 {recentAnnouncements.map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex items-center gap-2.5 rounded-lg border border-gray-100 px-3 py-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold text-gray-900 truncate">
-                        {a.title}
-                      </p>
-                      <p className="text-[10px] text-gray-400">
-                        {new Date(a.created_at).toLocaleDateString("en-GB", {
-                          day: "numeric",
-                          month: "short",
-                        })}
+                  <div key={a.id} className="px-4 py-2.5 flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[12px] font-semibold text-[#2D2D2D] dark:text-white truncate">{a.title}</p>
+                      <p className="text-[10px] text-[#9A9A9A] dark:text-[#A0A0A0]">
+                        {new Date(a.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
                       </p>
                     </div>
                     {a.priority !== "normal" && (
-                      <span
-                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
-                          a.priority === "urgent"
-                            ? "bg-red-50 text-red-600"
-                            : "bg-amber-50 text-amber-600"
-                        }`}
-                      >
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+                        a.priority === "urgent"
+                          ? "bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400"
+                          : "bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"
+                      }`}>
                         {a.priority}
                       </span>
                     )}
@@ -588,8 +370,8 @@ export default async function AdminDashboard() {
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

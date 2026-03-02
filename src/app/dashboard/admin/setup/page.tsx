@@ -2,29 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Layers, FolderOpen, BookOpen, Plus, Trash2, ChevronRight, Loader2 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 
-interface YearGroup {
-  id: string;
-  name: string;
-  sort_order: number;
-}
-
-interface ClassItem {
-  id: string;
-  name: string;
-  year_group_id: string;
-}
-
-interface Subject {
-  id: string;
-  name: string;
-  color: string;
-}
+interface YearGroup { id: string; name: string; sort_order: number; }
+interface ClassItem { id: string; name: string; year_group_id: string; }
+interface Subject { id: string; name: string; color: string; }
+interface TeacherProfile { id: string; full_name: string; }
+interface ClassSubjectLink { id: string; class_id: string; subject_id: string; teacher_id: string | null; }
 
 const SUBJECT_COLORS = [
   "#059669", "#0891b2", "#7c3aed", "#dc2626", "#ea580c",
@@ -38,32 +22,42 @@ export default function AdminSetupPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Year groups
   const [yearGroups, setYearGroups] = useState<YearGroup[]>([]);
   const [newYearGroupName, setNewYearGroupName] = useState("");
   const [addingYearGroup, setAddingYearGroup] = useState(false);
-
-  // Classes
-  const [classes, setClasses] = useState<ClassItem[]>([]);
   const [selectedYearGroup, setSelectedYearGroup] = useState<string | null>(null);
+
+  const [classes, setClasses] = useState<ClassItem[]>([]);
   const [newClassName, setNewClassName] = useState("");
   const [addingClass, setAddingClass] = useState(false);
 
-  // Subjects
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [newSubjectName, setNewSubjectName] = useState("");
   const [newSubjectColor, setNewSubjectColor] = useState(SUBJECT_COLORS[0]);
   const [addingSubject, setAddingSubject] = useState(false);
 
+  // Class-subject-teacher linking
+  const [teachers, setTeachers] = useState<TeacherProfile[]>([]);
+  const [classSubjectLinks, setClassSubjectLinks] = useState<ClassSubjectLink[]>([]);
+  const [linkClassId, setLinkClassId] = useState("");
+  const [linkSubjectId, setLinkSubjectId] = useState("");
+  const [linkTeacherId, setLinkTeacherId] = useState("");
+  const [addingLink, setAddingLink] = useState(false);
+  const [deletingLinkId, setDeletingLinkId] = useState<string | null>(null);
+
   const fetchData = useCallback(async (sid: string) => {
-    const [ygRes, clRes, subRes] = await Promise.all([
+    const [ygRes, clRes, subRes, teachRes, csRes] = await Promise.all([
       supabase.from("year_groups").select("*").eq("school_id", sid).order("sort_order"),
       supabase.from("classes").select("*").eq("school_id", sid).order("name"),
       supabase.from("subjects").select("*").eq("school_id", sid).order("name"),
+      supabase.from("profiles").select("id, full_name").eq("school_id", sid).eq("role", "teacher").order("full_name"),
+      supabase.from("class_subjects").select("id, class_id, subject_id, teacher_id").eq("school_id", sid),
     ]);
     setYearGroups(ygRes.data || []);
     setClasses(clRes.data || []);
     setSubjects(subRes.data || []);
+    setTeachers(teachRes.data || []);
+    setClassSubjectLinks(csRes.data || []);
   }, [supabase]);
 
   useEffect(() => {
@@ -71,11 +65,7 @@ export default function AdminSetupPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       setUserId(user.id);
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("school_id")
-        .eq("id", user.id)
-        .single();
+      const { data: profile } = await supabase.from("profiles").select("school_id").eq("id", user.id).single();
       if (profile?.school_id) {
         setSchoolId(profile.school_id);
         await fetchData(profile.school_id);
@@ -85,52 +75,33 @@ export default function AdminSetupPage() {
     init();
   }, [supabase, fetchData]);
 
-  // ── Year Groups ──
   const addYearGroup = async () => {
     if (!schoolId || !newYearGroupName.trim()) return;
     setAddingYearGroup(true);
-    const { error } = await supabase.from("year_groups").insert({
-      school_id: schoolId,
-      name: newYearGroupName.trim(),
-      sort_order: yearGroups.length,
-    });
-    if (!error) {
-      setNewYearGroupName("");
-      await fetchData(schoolId);
-    }
+    const { error } = await supabase.from("year_groups").insert({ school_id: schoolId, name: newYearGroupName.trim(), sort_order: yearGroups.length });
+    if (!error) { setNewYearGroupName(""); await fetchData(schoolId); toast.success("Year group added"); }
+    else toast.error("Failed to add year group");
     setAddingYearGroup(false);
   };
 
   const deleteYearGroup = async (id: string) => {
     if (!schoolId) return;
-    // Delete invite codes for classes in this year group
     const ygClasses = classes.filter((c) => c.year_group_id === id);
-    for (const cl of ygClasses) {
-      await supabase.from("school_invite_codes").delete().eq("class_id", cl.id);
-    }
+    for (const cl of ygClasses) await supabase.from("school_invite_codes").delete().eq("class_id", cl.id);
     await supabase.from("classes").delete().eq("year_group_id", id);
     await supabase.from("year_groups").delete().eq("id", id);
     if (selectedYearGroup === id) setSelectedYearGroup(null);
     await fetchData(schoolId);
+    toast.success("Year group removed");
   };
 
-  // ── Classes ──
   const addClass = async () => {
     if (!schoolId || !userId || !selectedYearGroup || !newClassName.trim()) return;
     setAddingClass(true);
-    const { data: newClass } = await supabase.from("classes").insert({
-      school_id: schoolId,
-      year_group_id: selectedYearGroup,
-      name: newClassName.trim(),
-    }).select("id").single();
-    // Auto-create student invite code for this class
+    const { data: newClass } = await supabase.from("classes").insert({ school_id: schoolId, year_group_id: selectedYearGroup, name: newClassName.trim() }).select("id").single();
     if (newClass) {
-      await supabase.from("school_invite_codes").insert({
-        school_id: schoolId,
-        role: "student",
-        class_id: newClass.id,
-        created_by: userId,
-      });
+      await supabase.from("school_invite_codes").insert({ school_id: schoolId, role: "student", class_id: newClass.id, created_by: userId });
+      toast.success("Class added");
     }
     setNewClassName("");
     await fetchData(schoolId);
@@ -142,22 +113,19 @@ export default function AdminSetupPage() {
     await supabase.from("school_invite_codes").delete().eq("class_id", id);
     await supabase.from("classes").delete().eq("id", id);
     await fetchData(schoolId);
+    toast.success("Class removed");
   };
 
-  // ── Subjects ──
   const addSubject = async () => {
     if (!schoolId || !newSubjectName.trim()) return;
     setAddingSubject(true);
-    const { error } = await supabase.from("subjects").insert({
-      school_id: schoolId,
-      name: newSubjectName.trim(),
-      color: newSubjectColor,
-    });
+    const { error } = await supabase.from("subjects").insert({ school_id: schoolId, name: newSubjectName.trim(), color: newSubjectColor });
     if (!error) {
       setNewSubjectName("");
       setNewSubjectColor(SUBJECT_COLORS[(subjects.length + 1) % SUBJECT_COLORS.length]);
       await fetchData(schoolId);
-    }
+      toast.success("Subject added");
+    } else toast.error("Failed to add subject");
     setAddingSubject(false);
   };
 
@@ -165,212 +133,311 @@ export default function AdminSetupPage() {
     if (!schoolId) return;
     await supabase.from("subjects").delete().eq("id", id);
     await fetchData(schoolId);
+    toast.success("Subject removed");
+  };
+
+  const addLink = async () => {
+    if (!schoolId || !linkClassId || !linkSubjectId) { toast.error("Select a class and subject"); return; }
+    const existing = classSubjectLinks.find((l) => l.class_id === linkClassId && l.subject_id === linkSubjectId);
+    if (existing) { toast.error("This class-subject link already exists"); return; }
+    setAddingLink(true);
+    const { error } = await supabase.from("class_subjects").insert({
+      school_id: schoolId,
+      class_id: linkClassId,
+      subject_id: linkSubjectId,
+      teacher_id: linkTeacherId || null,
+    });
+    if (!error) {
+      await fetchData(schoolId);
+      setLinkClassId(""); setLinkSubjectId(""); setLinkTeacherId("");
+      toast.success("Assignment created");
+    } else toast.error("Failed to create assignment");
+    setAddingLink(false);
+  };
+
+  const deleteLink = async (id: string) => {
+    setDeletingLinkId(id);
+    await supabase.from("class_subjects").delete().eq("id", id);
+    setClassSubjectLinks((prev) => prev.filter((l) => l.id !== id));
+    toast.success("Assignment removed");
+    setDeletingLinkId(null);
   };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-32">
-        <Loader2 className="h-8 w-8 animate-spin text-[#1e3a5f]" />
+        <div className="w-6 h-6 rounded-full border-2 border-[#2D2D2D]/20 dark:border-white/20 border-t-black dark:border-t-white animate-spin" />
       </div>
     );
   }
 
   const selectedYGClasses = classes.filter((c) => c.year_group_id === selectedYearGroup);
 
+  const classMap: Record<string, string> = {};
+  classes.forEach((c) => { classMap[c.id] = c.name; });
+  const subjectMap: Record<string, Subject> = {};
+  subjects.forEach((s) => { subjectMap[s.id] = s; });
+  const teacherMap: Record<string, string> = {};
+  teachers.forEach((t) => { teacherMap[t.id] = t.full_name; });
+
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">School Setup</h1>
-        <p className="mt-1 text-gray-500">
-          Create year groups, add classes, and define the subjects your school teaches.
-        </p>
+    <div className="h-full flex flex-col gap-3">
+      <div className="shrink-0" style={{ paddingTop: 23 }}>
+        <p className="text-[12px] text-[#9A9A9A] dark:text-[#A0A0A0]">Admin</p>
+        <h1 className="text-[22px] font-semibold text-[#2d2d2d] dark:text-white mt-0.5">School Setup</h1>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* ── Year Groups ── */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base font-bold">
-              <Layers className="h-5 w-5 text-[#1e3a5f]" />
-              Year Groups
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 flex-1 min-h-0 pb-4">
+        {/* Year Groups */}
+        <div className="dash-card dark:border-[#2D2D2D] bg-white dark:bg-[#333333] rounded-2xl flex flex-col overflow-hidden">
+          <div className="px-5 py-3 border-b border-[#2D2D2D]/5 dark:border-white/5 shrink-0">
+            <p className="text-[14px] font-semibold text-[#2D2D2D] dark:text-white">Year Groups</p>
+          </div>
+          <div className="px-5 py-3 border-b border-[#2D2D2D]/5 dark:border-white/5 shrink-0">
             <div className="flex gap-2">
-              <Input
+              <input
+                type="text"
                 placeholder="e.g. Year 7"
                 value={newYearGroupName}
                 onChange={(e) => setNewYearGroupName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addYearGroup()}
-                className="flex-1"
+                className="flex-1 bg-[#2D2D2D]/5 dark:bg-white/5 border-0 rounded-xl px-3 py-2 text-[13px] text-[#2D2D2D] dark:text-white placeholder:text-[#9A9A9A] outline-none"
               />
-              <Button
+              <button
                 onClick={addYearGroup}
                 disabled={addingYearGroup || !newYearGroupName.trim()}
-                className="bg-[#1e3a5f] hover:bg-[#162d4a] shrink-0"
+                className="bg-[#2D2D2D] dark:bg-white text-white dark:text-[#2D2D2D] text-[12px] font-bold px-4 py-2 rounded-xl hover:opacity-80 disabled:opacity-40 transition-opacity shrink-0"
               >
-                {addingYearGroup ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              </Button>
+                {addingYearGroup ? "…" : "+ Add"}
+              </button>
             </div>
-
+          </div>
+          <div className="flex-1 overflow-y-auto min-h-0">
             {yearGroups.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">No year groups yet. Add your first one above.</p>
+              <div className="flex items-center justify-center py-10">
+                <p className="text-[12px] text-[#9A9A9A]">No year groups yet</p>
+              </div>
             ) : (
-              <div className="space-y-1.5">
+              <div className="divide-y divide-black/[0.06] dark:divide-white/[0.06]">
                 {yearGroups.map((yg) => (
                   <div
                     key={yg.id}
-                    onClick={() => setSelectedYearGroup(yg.id)}
-                    className={`flex items-center justify-between rounded-lg border px-3 py-2.5 cursor-pointer transition-all ${
-                      selectedYearGroup === yg.id
-                        ? "border-blue-300 bg-blue-50"
-                        : "border-gray-100 hover:bg-gray-50"
+                    onClick={() => setSelectedYearGroup(yg.id === selectedYearGroup ? null : yg.id)}
+                    className={`px-5 py-3 flex items-center justify-between cursor-pointer transition-colors ${
+                      selectedYearGroup === yg.id ? "bg-[#2D2D2D]/[0.04] dark:bg-white/[0.04]" : "hover:bg-[#2D2D2D]/[0.02] dark:hover:bg-white/[0.02]"
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      <ChevronRight className={`h-4 w-4 transition-transform ${selectedYearGroup === yg.id ? "rotate-90 text-[#1e3a5f]" : "text-gray-300"}`} />
-                      <span className="text-sm font-medium text-gray-900">{yg.name}</span>
-                      <span className="text-xs text-gray-400">
-                        {classes.filter((c) => c.year_group_id === yg.id).length} classes
-                      </span>
+                      <span className={`text-[10px] transition-transform inline-block ${selectedYearGroup === yg.id ? "rotate-90" : ""}`}>▶</span>
+                      <p className="text-[13px] font-semibold text-[#2D2D2D] dark:text-white">{yg.name}</p>
+                      <span className="text-[11px] text-[#9A9A9A]">{classes.filter((c) => c.year_group_id === yg.id).length} classes</span>
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); deleteYearGroup(yg.id); }}
-                      className="text-gray-300 hover:text-red-500 transition-colors"
+                      className="text-[11px] font-bold text-red-500 dark:text-red-400 hover:underline transition-colors"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      Remove
                     </button>
                   </div>
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* ── Classes ── */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base font-bold">
-              <FolderOpen className="h-5 w-5 text-[#1e3a5f]" />
+        {/* Classes */}
+        <div className="dash-card dark:border-[#2D2D2D] bg-white dark:bg-[#333333] rounded-2xl flex flex-col overflow-hidden">
+          <div className="px-5 py-3 border-b border-[#2D2D2D]/5 dark:border-white/5 shrink-0 flex items-center justify-between">
+            <p className="text-[14px] font-semibold text-[#2D2D2D] dark:text-white">
               Classes
               {selectedYearGroup && (
-                <span className="text-sm font-normal text-gray-400">
-                  — {yearGroups.find((yg) => yg.id === selectedYearGroup)?.name}
-                </span>
+                <span className="text-[12px] font-normal text-[#9A9A9A] ml-1.5">— {yearGroups.find((yg) => yg.id === selectedYearGroup)?.name}</span>
               )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {!selectedYearGroup ? (
-              <p className="text-sm text-gray-400 text-center py-6">Select a year group on the left to manage its classes.</p>
-            ) : (
-              <>
+            </p>
+          </div>
+          {!selectedYearGroup ? (
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-[12px] text-[#9A9A9A] px-8 text-center">Select a year group on the left to manage its classes</p>
+            </div>
+          ) : (
+            <>
+              <div className="px-5 py-3 border-b border-[#2D2D2D]/5 dark:border-white/5 shrink-0">
                 <div className="flex gap-2">
-                  <Input
+                  <input
+                    type="text"
                     placeholder="e.g. 7A"
                     value={newClassName}
                     onChange={(e) => setNewClassName(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && addClass()}
-                    className="flex-1"
+                    className="flex-1 bg-[#2D2D2D]/5 dark:bg-white/5 border-0 rounded-xl px-3 py-2 text-[13px] text-[#2D2D2D] dark:text-white placeholder:text-[#9A9A9A] outline-none"
                   />
-                  <Button
+                  <button
                     onClick={addClass}
                     disabled={addingClass || !newClassName.trim()}
-                    className="bg-[#1e3a5f] hover:bg-[#162d4a] shrink-0"
+                    className="bg-[#2D2D2D] dark:bg-white text-white dark:text-[#2D2D2D] text-[12px] font-bold px-4 py-2 rounded-xl hover:opacity-80 disabled:opacity-40 transition-opacity shrink-0"
                   >
-                    {addingClass ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                  </Button>
+                    {addingClass ? "…" : "+ Add"}
+                  </button>
                 </div>
-
+              </div>
+              <div className="flex-1 overflow-y-auto min-h-0">
                 {selectedYGClasses.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-6">No classes in this year group yet.</p>
+                  <div className="flex items-center justify-center py-10">
+                    <p className="text-[12px] text-[#9A9A9A]">No classes in this year group yet</p>
+                  </div>
                 ) : (
-                  <div className="space-y-1.5">
+                  <div className="divide-y divide-black/[0.06] dark:divide-white/[0.06]">
                     {selectedYGClasses.map((cl) => (
-                      <div
-                        key={cl.id}
-                        className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2.5"
-                      >
-                        <span className="text-sm font-medium text-gray-900">{cl.name}</span>
-                        <button
-                          onClick={() => deleteClass(cl.id)}
-                          className="text-gray-300 hover:text-red-500 transition-colors"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                      <div key={cl.id} className="px-5 py-3 flex items-center justify-between">
+                        <p className="text-[13px] font-semibold text-[#2D2D2D] dark:text-white">{cl.name}</p>
+                        <button onClick={() => deleteClass(cl.id)} className="text-[11px] font-bold text-red-500 dark:text-red-400 hover:underline">Remove</button>
                       </div>
                     ))}
                   </div>
                 )}
-              </>
-            )}
-          </CardContent>
-        </Card>
+              </div>
+            </>
+          )}
+        </div>
 
-        {/* ── Subjects ── */}
-        <Card className="border-0 shadow-sm lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base font-bold">
-              <BookOpen className="h-5 w-5 text-[#1e3a5f]" />
-              Subjects
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        {/* Subjects */}
+        <div className="dash-card dark:border-[#2D2D2D] bg-white dark:bg-[#333333] rounded-2xl flex flex-col overflow-hidden">
+          <div className="px-5 py-3 border-b border-[#2D2D2D]/5 dark:border-white/5 shrink-0">
+            <p className="text-[14px] font-semibold text-[#2D2D2D] dark:text-white">Subjects</p>
+          </div>
+          <div className="px-5 py-3 border-b border-[#2D2D2D]/5 dark:border-white/5 shrink-0 space-y-2">
             <div className="flex gap-2">
-              <Input
+              <input
+                type="text"
                 placeholder="e.g. Mathematics"
                 value={newSubjectName}
                 onChange={(e) => setNewSubjectName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && addSubject()}
-                className="flex-1"
+                className="flex-1 bg-[#2D2D2D]/5 dark:bg-white/5 border-0 rounded-xl px-3 py-2 text-[13px] text-[#2D2D2D] dark:text-white placeholder:text-[#9A9A9A] outline-none"
               />
-              <div className="flex items-center gap-1.5 shrink-0">
-                <Label className="text-xs text-gray-400 sr-only">Color</Label>
-                <div className="flex gap-1">
-                  {SUBJECT_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => setNewSubjectColor(color)}
-                      className={`h-7 w-7 rounded-full border-2 transition-all ${
-                        newSubjectColor === color ? "border-gray-900 scale-110" : "border-transparent"
-                      }`}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </div>
-              </div>
-              <Button
+              <button
                 onClick={addSubject}
                 disabled={addingSubject || !newSubjectName.trim()}
-                className="bg-[#1e3a5f] hover:bg-[#162d4a] shrink-0"
+                className="bg-[#2D2D2D] dark:bg-white text-white dark:text-[#2D2D2D] text-[12px] font-bold px-4 py-2 rounded-xl hover:opacity-80 disabled:opacity-40 transition-opacity shrink-0"
               >
-                {addingSubject ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              </Button>
+                {addingSubject ? "…" : "+ Add"}
+              </button>
             </div>
-
+            <div className="flex gap-1.5 flex-wrap">
+              {SUBJECT_COLORS.map((color) => (
+                <button
+                  key={color}
+                  onClick={() => setNewSubjectColor(color)}
+                  className={`w-6 h-6 rounded-full border-2 transition-all ${newSubjectColor === color ? "border-[#2D2D2D] dark:border-white scale-110" : "border-transparent"}`}
+                  style={{ backgroundColor: color }}
+                />
+              ))}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto min-h-0 px-5 py-3">
             {subjects.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">No subjects yet. Add your school&apos;s subjects above.</p>
+              <p className="text-[12px] text-[#9A9A9A] text-center py-6">No subjects yet</p>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {subjects.map((s) => (
-                  <div
-                    key={s.id}
-                    className="group inline-flex items-center gap-2 rounded-full border border-gray-100 bg-white pl-3 pr-1.5 py-1.5 text-sm font-medium text-gray-700 shadow-sm"
-                  >
-                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-                    {s.name}
+                  <div key={s.id} className="group inline-flex items-center gap-2 bg-[#2D2D2D]/5 dark:bg-white/5 rounded-full pl-3 pr-2 py-1.5">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                    <span className="text-[12px] font-semibold text-[#2D2D2D] dark:text-white">{s.name}</span>
                     <button
                       onClick={() => deleteSubject(s.id)}
-                      className="ml-0.5 rounded-full p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                      className="text-[10px] font-bold text-[#9A9A9A] hover:text-red-500 dark:hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 ml-0.5"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      ✕
                     </button>
                   </div>
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+
+        {/* Class-Subject-Teacher Assignment */}
+        <div className="dash-card dark:border-[#2D2D2D] bg-white dark:bg-[#333333] rounded-2xl flex flex-col overflow-hidden">
+          <div className="px-5 py-3 border-b border-[#2D2D2D]/5 dark:border-white/5 shrink-0">
+            <p className="text-[14px] font-semibold text-[#2D2D2D] dark:text-white">Class · Subject · Teacher</p>
+            <p className="text-[11px] text-[#9A9A9A] dark:text-[#A0A0A0] mt-0.5">Assign which teacher teaches which subject to which class</p>
+          </div>
+          {/* Add form */}
+          <div className="px-5 py-3 border-b border-[#2D2D2D]/5 dark:border-white/5 shrink-0 space-y-2">
+            <div className="grid grid-cols-3 gap-2">
+              <select
+                value={linkClassId}
+                onChange={(e) => setLinkClassId(e.target.value)}
+                className="bg-[#2D2D2D]/5 dark:bg-white/5 border-0 rounded-xl px-2 py-2 text-[12px] text-[#2D2D2D] dark:text-white outline-none"
+              >
+                <option value="">Class…</option>
+                {classes.map((c) => {
+                  const yg = yearGroups.find((y) => y.id === c.year_group_id);
+                  return <option key={c.id} value={c.id}>{yg ? `${yg.name} ${c.name}` : c.name}</option>;
+                })}
+              </select>
+              <select
+                value={linkSubjectId}
+                onChange={(e) => setLinkSubjectId(e.target.value)}
+                className="bg-[#2D2D2D]/5 dark:bg-white/5 border-0 rounded-xl px-2 py-2 text-[12px] text-[#2D2D2D] dark:text-white outline-none"
+              >
+                <option value="">Subject…</option>
+                {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <select
+                value={linkTeacherId}
+                onChange={(e) => setLinkTeacherId(e.target.value)}
+                className="bg-[#2D2D2D]/5 dark:bg-white/5 border-0 rounded-xl px-2 py-2 text-[12px] text-[#2D2D2D] dark:text-white outline-none"
+              >
+                <option value="">Teacher (opt.)</option>
+                {teachers.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+              </select>
+            </div>
+            <button
+              onClick={addLink}
+              disabled={addingLink || !linkClassId || !linkSubjectId}
+              className="w-full bg-[#2D2D2D] dark:bg-white text-white dark:text-[#2D2D2D] text-[12px] font-bold py-2 rounded-xl hover:opacity-80 disabled:opacity-40 transition-opacity"
+            >
+              {addingLink ? "Assigning…" : "Assign"}
+            </button>
+          </div>
+          {/* Existing links */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            {classSubjectLinks.length === 0 ? (
+              <div className="flex items-center justify-center py-10">
+                <p className="text-[12px] text-[#9A9A9A]">No assignments yet</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-black/[0.06] dark:divide-white/[0.06]">
+                {classSubjectLinks.map((link) => {
+                  const cls = classMap[link.class_id];
+                  const sub = subjectMap[link.subject_id];
+                  const teacher = link.teacher_id ? teacherMap[link.teacher_id] : null;
+                  const yg = classes.find((c) => c.id === link.class_id);
+                  const ygName = yg ? yearGroups.find((y) => y.id === yg.year_group_id)?.name : null;
+                  return (
+                    <div key={link.id} className="px-5 py-2.5 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        {sub && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: sub.color }} />}
+                        <p className="text-[12px] font-semibold text-[#2D2D2D] dark:text-white truncate">
+                          {sub?.name || "Unknown"} — {ygName ? `${ygName} ` : ""}{cls || "Unknown"}
+                        </p>
+                        {teacher && <span className="text-[10px] text-[#9A9A9A] shrink-0">{teacher}</span>}
+                      </div>
+                      <button
+                        onClick={() => deleteLink(link.id)}
+                        disabled={deletingLinkId === link.id}
+                        className="text-[11px] font-bold text-red-500 dark:text-red-400 hover:underline disabled:opacity-40 shrink-0"
+                      >
+                        {deletingLinkId === link.id ? "…" : "Remove"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

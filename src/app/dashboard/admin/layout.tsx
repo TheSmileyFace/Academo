@@ -10,7 +10,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, role")
+    .select("full_name, role, avatar_url")
     .eq("id", user.id)
     .single();
 
@@ -21,8 +21,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <div className="h-screen overflow-hidden noise-bg flex p-2 pl-0">
-      <DashboardSidebar role="admin" userName={userName} />
-      <main className="flex-1 bg-white rounded-2xl overflow-hidden relative z-[1]">
+      <DashboardSidebar role="admin" userName={userName} avatarUrl={profile?.avatar_url} />
+      <main className="flex-1 bg-white dark:bg-[#1E1E1E] rounded-2xl overflow-hidden relative z-[1] transition-colors duration-300 shadow-sm border border-transparent dark:border-[#2D2D2D]">
         <div className="h-full overflow-auto px-6 py-5">{children}</div>
       </main>
     </div>

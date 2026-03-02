@@ -1,15 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, CheckCircle2, Clock, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 interface Submission {
   id: string;
+  studentId: string;
   studentName: string;
   assignmentTitle: string;
   subject: string;
@@ -55,92 +57,99 @@ export function SubmissionsClient({ submissions }: { submissions: Submission[] }
   return (
     <div className="space-y-4">
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#9A9A9A]" />
         <Input
           placeholder="Search by student or assignment..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pl-10 rounded-xl border-gray-200 bg-white"
+          className="pl-9 rounded-xl border-[#2D2D2D]/10 bg-white h-9 text-[13px]"
         />
       </div>
 
-      <Card className="border-0 shadow-sm overflow-hidden">
-        <div className="divide-y divide-gray-100">
+      <Card className="border-0 shadow-none dash-card rounded-2xl overflow-hidden">
+        <div className="divide-y divide-black/5">
           {filtered.map((s) => (
-            <div key={s.id} className="px-5 py-4">
+            <div key={s.id} className="p-4 hover:bg-[#2D2D2D]/[0.02] transition-colors">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className={`flex h-9 w-9 items-center justify-center rounded-lg shrink-0 ${
-                    s.status === "graded" ? "bg-green-50" : "bg-amber-50"
-                  }`}>
-                    {s.status === "graded"
-                      ? <CheckCircle2 className="h-4 w-4 text-green-600" />
-                      : <Clock className="h-4 w-4 text-amber-600" />}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{s.studentName}</p>
-                    <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
-                      <span>{s.assignmentTitle}</span>
-                      <span className="text-gray-200">·</span>
-                      <span>{s.subject}</span>
-                      <span className="text-gray-200">·</span>
-                      <span>{new Date(s.submittedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
-                    </div>
+                <div className="flex flex-col gap-1 min-w-0">
+                  <Link href={`/dashboard/teacher/students/${s.studentId}`} className="text-[14px] font-semibold text-[#2D2D2D] truncate hover:underline">{s.studentName}</Link>
+                  <div className="flex items-center gap-2 text-[12px] text-[#9A9A9A]">
+                    <span className="font-medium text-[#2D2D2D]/70">{s.assignmentTitle}</span>
+                    <span className="text-[#9A9A9A]/30">•</span>
+                    <span>{s.subject}</span>
+                    <span className="text-[#9A9A9A]/30">•</span>
+                    <span>{new Date(s.submittedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex flex-col items-end gap-2 shrink-0">
                   {s.status === "graded" ? (
-                    <span className={`text-sm font-bold ${
-                      (s.grade || 0) >= 70 ? "text-green-600" : (s.grade || 0) >= 50 ? "text-amber-600" : "text-red-600"
-                    }`}>
-                      {s.grade}%
-                    </span>
+                    <div className="flex flex-col items-end">
+                      <span className="text-[16px] font-bold text-[#2D2D2D]">
+                        {s.grade}%
+                      </span>
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#2D2D2D]/5 text-[#9A9A9A]">
+                        Graded
+                      </span>
+                    </div>
                   ) : (
-                    <Button
-                      size="sm"
-                      onClick={() => { setGrading(s.id); setGradeVal(""); setFeedbackVal(""); }}
-                      className="bg-[#1e3a5f] hover:bg-[#162d4a] rounded-lg text-xs h-8"
-                    >
-                      Grade
-                    </Button>
+                    <div className="flex flex-col items-end gap-2">
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#2D2D2D]/5 text-[#2D2D2D]">
+                        Needs Review
+                      </span>
+                      <Button
+                        size="sm"
+                        onClick={() => { setGrading(s.id); setGradeVal(""); setFeedbackVal(""); }}
+                        className="bg-[#2D2D2D] hover:bg-[#2D2D2D]/90 text-white rounded-xl text-[12px] h-7 px-4"
+                      >
+                        Grade
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
 
               {s.feedback && s.status === "graded" && (
-                <p className="text-xs text-gray-500 mt-1.5 ml-12 italic line-clamp-1">{s.feedback}</p>
+                <div className="mt-3 p-3 bg-[#2D2D2D]/5 rounded-xl border border-[#2D2D2D]/5">
+                  <p className="text-[12px] text-[#2D2D2D]/70 italic">"{s.feedback}"</p>
+                </div>
               )}
 
               {grading === s.id && (
-                <div className="mt-3 ml-12 space-y-2 p-3 rounded-lg bg-gray-50 border border-gray-100">
-                  <div className="flex gap-2">
-                    <Input
-                      type="number"
-                      min="0"
-                      max="100"
-                      placeholder="Grade (0-100)"
-                      value={gradeVal}
-                      onChange={(e) => setGradeVal(e.target.value)}
-                      className="w-32 rounded-lg text-sm"
-                    />
-                    <Input
-                      placeholder="Feedback (optional)"
-                      value={feedbackVal}
-                      onChange={(e) => setFeedbackVal(e.target.value)}
-                      className="flex-1 rounded-lg text-sm"
-                    />
+                <div className="mt-4 p-4 rounded-xl bg-[#2D2D2D]/5 border border-[#2D2D2D]/5 space-y-3">
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="w-full sm:w-32">
+                      <label className="text-[11px] font-semibold text-[#2D2D2D]/70 mb-1.5 block">Score (0-100)</label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        placeholder="0"
+                        value={gradeVal}
+                        onChange={(e) => setGradeVal(e.target.value)}
+                        className="rounded-xl border-[#2D2D2D]/10 bg-white h-9 text-[13px]"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-[11px] font-semibold text-[#2D2D2D]/70 mb-1.5 block">Feedback (Optional)</label>
+                      <Input
+                        placeholder="Add comments..."
+                        value={feedbackVal}
+                        onChange={(e) => setFeedbackVal(e.target.value)}
+                        className="rounded-xl border-[#2D2D2D]/10 bg-white h-9 text-[13px]"
+                      />
+                    </div>
                   </div>
-                  <div className="flex gap-2 justify-end">
-                    <Button variant="ghost" size="sm" onClick={() => setGrading(null)} className="text-xs h-7 rounded-lg">
+                  <div className="flex items-center gap-2 justify-end pt-1">
+                    <Button variant="ghost" size="sm" onClick={() => setGrading(null)} className="text-[12px] h-8 rounded-xl text-[#9A9A9A] hover:text-[#2D2D2D] hover:bg-[#2D2D2D]/5">
                       Cancel
                     </Button>
                     <Button
                       size="sm"
                       onClick={() => handleGrade(s.id)}
                       disabled={saving || !gradeVal}
-                      className="bg-[#1e3a5f] hover:bg-[#162d4a] text-xs h-7 rounded-lg"
+                      className="bg-[#2D2D2D] hover:bg-[#2D2D2D]/90 text-white text-[12px] h-8 rounded-xl px-5"
                     >
-                      {saving ? "Saving..." : "Submit Grade"}
+                      {saving ? "Saving..." : "Submit"}
                     </Button>
                   </div>
                 </div>
@@ -148,7 +157,10 @@ export function SubmissionsClient({ submissions }: { submissions: Submission[] }
             </div>
           ))}
           {filtered.length === 0 && (
-            <div className="py-10 text-center text-sm text-gray-400">No matching submissions</div>
+            <div className="py-12 text-center">
+              <p className="text-[14px] font-medium text-[#2D2D2D]">No submissions found</p>
+              <p className="text-[12px] text-[#9A9A9A] mt-1">Try adjusting your search query</p>
+            </div>
           )}
         </div>
       </Card>
